@@ -30,7 +30,7 @@ class StateMachine:
         StepStatus.VERIFYING: {StepStatus.VERIFIED, StepStatus.FAILED, StepStatus.RECOVERING},
         StepStatus.RECOVERING: {StepStatus.EXECUTING, StepStatus.VERIFYING, StepStatus.FAILED, StepStatus.REJECTED},
         StepStatus.VERIFIED: set(),  # Terminal success state for a step
-        StepStatus.FAILED: set(),    # Terminal failure state
+        StepStatus.FAILED: {StepStatus.RECOVERING},  # Can transition to RECOVERING for bounded self-healing
         StepStatus.REJECTED: set(),  # Terminal rejected state
     }
 
