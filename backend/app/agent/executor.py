@@ -45,49 +45,22 @@ class SandboxedExecutor:
         cls,
         plan_id: str,
         step_id: Optional[str],
-        event_type: EventType,
+        event_type: Any,
         payload: Dict[str, Any],
         db: AsyncSession,
         severity: Severity = Severity.INFO
     ) -> AuditEvent:
-        """Commits a tamper-evident audit event with SHA-256 hash chaining."""
-        # Find previous event proof_hash for plan
-        last_event_query = await db.execute(
-            select(AuditEvent)
-            .where(AuditEvent.plan_id == plan_id)
-            .order_by(AuditEvent.timestamp.desc())
-            .limit(1)
-        )
-        last_event = last_event_query.scalar_one_or_none()
-        prev_hash = last_event.proof_hash if last_event else None
-
-        event_id = f"evt_{uuid.uuid4().hex[:12]}"
-        now = datetime.now(timezone.utc)
-        scrubbed_payload = cls.scrub_secrets(payload)
-
-        proof_hash = security_service.compute_audit_hash(
-            prev_hash=prev_hash,
-            event_id=event_id,
-            timestamp=now.isoformat(),
-            event_type=event_type.value,
-            payload=scrubbed_payload
-        )
-
-        audit_entry = AuditEvent(
-            id=event_id,
+        """Commits a tamper-evident audit event with SHA-256 hash chaining and SSE broadcast."""
+        from backend.app.agent.audit_ledger import audit_ledger
+        return await audit_ledger.record_event(
             plan_id=plan_id,
             step_id=step_id,
-            event_type=event_type.value,
-            severity=severity.value,
-            actor="SYSTEM",
-            payload_json=json.dumps(scrubbed_payload, default=str),
-            prev_proof_hash=prev_hash,
-            proof_hash=proof_hash,
-            timestamp=now
+            event_type=event_type,
+            payload=payload,
+            db=db,
+            severity=severity,
+            actor="SYSTEM"
         )
-        db.add(audit_entry)
-        await db.flush()
-        return audit_entry
 
     @classmethod
     async def execute_step(
@@ -129,6 +102,18 @@ class SandboxedExecutor:
         # 3. Deterministic Risk & Permission Gate
         risk_eval = RiskEngine.evaluate_risk(step.tool_name, parameters)
         approval_granted = False
+
+        await cls.record_audit_event(
+            plan_id=plan_id,
+            step_id=step.id,
+            event_type=EventType.RISK_EVALUATED,
+            payload={
+                "tool_name": step.tool_name,
+                "risk_tier": risk_eval.risk_tier.value,
+                "requires_approval": risk_eval.requires_approval
+            },
+            db=db
+        )
 
         if risk_eval.requires_approval:
             # Case A: Already approved in database
@@ -177,7 +162,7 @@ class SandboxedExecutor:
                 await cls.record_audit_event(
                     plan_id=plan_id,
                     step_id=step.id,
-                    event_type=EventType.APPROVAL_REQUESTED,
+                    event_type=EventType.APPROVAL_REQUIRED,
                     payload={"tool_name": step.tool_name, "risk_tier": risk_eval.risk_tier.value, "expires_at": expires_at},
                     db=db,
                     severity=Severity.WARNING
@@ -200,7 +185,7 @@ class SandboxedExecutor:
         await cls.record_audit_event(
             plan_id=plan_id,
             step_id=step.id,
-            event_type=EventType.TOOL_EXECUTION_STARTED,
+            event_type=EventType.EXECUTING,
             payload={"tool_name": step.tool_name, "parameters": parameters},
             db=db
         )
@@ -240,7 +225,7 @@ class SandboxedExecutor:
             await cls.record_audit_event(
                 plan_id=plan_id,
                 step_id=step.id,
-                event_type=EventType.TOOL_EXECUTION_COMPLETED,
+                event_type=EventType.VERIFYING,
                 payload={"tool_name": step.tool_name, "status": "EXECUTED", "latency_ms": latency_ms},
                 db=db
             )
@@ -259,7 +244,7 @@ class SandboxedExecutor:
             await cls.record_audit_event(
                 plan_id=plan_id,
                 step_id=step.id,
-                event_type=EventType.TOOL_EXECUTION_COMPLETED,
+                event_type=EventType.FAILED,
                 payload={"tool_name": step.tool_name, "status": "EXECUTION_FAILED", "error": error_msg},
                 db=db,
                 severity=Severity.CRITICAL

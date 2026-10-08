@@ -10,12 +10,14 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
+from backend.app.agent.audit_ledger import audit_ledger
 from backend.app.agent.capability_engine import CapabilityGapEngine
 from backend.app.agent.planner import DynamicPlanner, PlannerResult, dynamic_planner
 from backend.app.core.database import get_db
 from backend.app.models.plan import Plan, Step
 from backend.app.models.user import User
 from backend.app.schemas.capability import CapabilityGapReport
+from backend.app.schemas.common import Actor, EventType
 from backend.app.schemas.plan import PlanCreate, PlanRead, StepRead
 from backend.app.schemas.risk import BlastRadiusReport
 
@@ -117,6 +119,27 @@ async def generate_plan(
         )
         db.add(db_step)
 
+    await db.commit()
+
+    # Record GOAL_RECEIVED and PLAN_CREATED in audit ledger and stream over SSE
+    await audit_ledger.record_event(
+        plan_id=plan_id,
+        event_type=EventType.GOAL_RECEIVED,
+        payload={"goal": payload.goal, "user_id": user_id},
+        actor=Actor.USER,
+        db=db
+    )
+    await audit_ledger.record_event(
+        plan_id=plan_id,
+        event_type=EventType.PLAN_CREATED,
+        payload={
+            "goal_summary": result.goal_summary,
+            "steps_count": len(result.steps),
+            "step_tools": [s.tool_name for s in result.steps]
+        },
+        actor=Actor.SYSTEM,
+        db=db
+    )
     await db.commit()
 
     return PlanGenerationResponse(

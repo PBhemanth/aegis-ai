@@ -306,7 +306,7 @@ class VerifierEngine:
             await sandboxed_executor.record_audit_event(
                 plan_id=plan_id,
                 step_id=step.id,
-                event_type=EventType.VERIFICATION_PASSED,
+                event_type=EventType.VERIFIED,
                 payload={"verifier": verifier.name, "assertions_passed": len(proof_data.assertions)},
                 db=db
             )
@@ -319,7 +319,7 @@ class VerifierEngine:
             await sandboxed_executor.record_audit_event(
                 plan_id=plan_id,
                 step_id=step.id,
-                event_type=EventType.VERIFICATION_FAILED,
+                event_type=EventType.FAILED,
                 payload={
                     "verifier": verifier.name,
                     "failed_assertions": [a.model_dump() for a in proof_data.assertions if not a.passed]

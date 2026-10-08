@@ -4,7 +4,15 @@ from backend.app.schemas.capability import CapabilityGapReport
 from backend.app.schemas.execution import ExecutionReceipt, StepExecutionRequest
 from backend.app.schemas.approval import ApprovalRequest, ApprovalResponse, RejectionRequest
 from backend.app.schemas.plan import StepDefinition, PlanDAG, StepRead, PlanCreate, PlanRead
-from backend.app.schemas.audit import AssertionResult, VerificationProofCreate, VerificationProofRead, AuditEventCreate, AuditEventRead
+from backend.app.schemas.audit import (
+    AssertionResult,
+    VerificationProofCreate,
+    VerificationProofRead,
+    AuditEventCreate,
+    AuditEventRead,
+    AuditVerificationResult,
+    AgentEvent
+)
 from backend.app.schemas.tool import ToolMetadata
 
 __all__ = [
@@ -30,5 +38,7 @@ __all__ = [
     "VerificationProofRead",
     "AuditEventCreate",
     "AuditEventRead",
+    "AuditVerificationResult",
+    "AgentEvent",
     "ToolMetadata",
 ]

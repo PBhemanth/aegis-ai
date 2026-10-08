@@ -1,6 +1,7 @@
 """
 Aegis Approvals & Permission Gate API Endpoints
 """
+import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 from fastapi import APIRouter, HTTPException, status
@@ -8,6 +9,9 @@ from pydantic import BaseModel, Field
 from backend.app.agent.permission_gate import permission_gate
 from backend.app.agent.risk_engine import RiskEngine
 from backend.app.schemas.approval import ApprovalRequest, ApprovalResponse, RejectionRequest
+from backend.app.schemas.audit import AgentEvent
+from backend.app.schemas.common import Actor, EventType, Severity
+from backend.app.services.event_broadcaster import event_broadcaster
 
 router = APIRouter(prefix="/approvals", tags=["Approvals"])
 
@@ -81,6 +85,19 @@ async def submit_approval(payload: ApprovalRequest):
             detail=msg
         )
 
+    event_broadcaster.broadcast(
+        AgentEvent(
+            id=f"evt_{uuid.uuid4().hex[:12]}",
+            timestamp=datetime.now(timezone.utc),
+            event_type=EventType.APPROVED.value,
+            plan_id=payload.plan_id,
+            step_id=payload.step_id,
+            actor=Actor.USER.value,
+            message="Action approval verified successfully.",
+            data={"action_fingerprint": payload.action_fingerprint}
+        )
+    )
+
     return ApprovalResponse(
         approved=True,
         plan_id=payload.plan_id,
@@ -96,6 +113,20 @@ async def reject_approval(payload: RejectionRequest):
     """
     Rejects an action, halting execution or prompting re-planning.
     """
+    event_broadcaster.broadcast(
+        AgentEvent(
+            id=f"evt_{uuid.uuid4().hex[:12]}",
+            timestamp=datetime.now(timezone.utc),
+            event_type=EventType.REJECTED.value,
+            plan_id=payload.plan_id,
+            step_id=payload.step_id,
+            actor=Actor.USER.value,
+            severity=Severity.WARNING.value,
+            message=f"Action rejected by user: {payload.reason}",
+            data={"reason": payload.reason}
+        )
+    )
+
     return ApprovalResponse(
         approved=False,
         plan_id=payload.plan_id,

@@ -13,7 +13,7 @@ from backend.app.agent.executor import sandboxed_executor
 from backend.app.agent.recovery import recovery_engine
 from backend.app.agent.state_machine import StateMachine
 from backend.app.models.plan import Plan, Step
-from backend.app.schemas.common import EventType, PlanStatus, StepStatus
+from backend.app.schemas.common import EventType, PlanStatus, StepStatus, Severity
 from backend.app.schemas.execution import ExecutionReceipt
 from backend.app.services.google_auth import google_auth_service
 from backend.app.tools.base import ExecutionContext
@@ -74,6 +74,14 @@ class AgentOrchestrator:
             if step.status == StepStatus.AWAITING_APPROVAL.value and not (approval_nonce and action_fingerprint):
                 plan.status = PlanStatus.HALTED.value
                 await db.commit()
+                await sandboxed_executor.record_audit_event(
+                    plan_id=plan.id,
+                    step_id=step.id,
+                    event_type=EventType.APPROVAL_REQUIRED,
+                    payload={"step_title": step.title, "tool_name": step.tool_name, "risk_tier": step.risk_tier},
+                    db=db,
+                    severity=Severity.WARNING
+                )
                 return PlanExecutionSummary(
                     plan_id=plan.id,
                     status=PlanStatus.HALTED.value,
@@ -101,6 +109,14 @@ class AgentOrchestrator:
                 if step.status == StepStatus.AWAITING_APPROVAL.value:
                     plan.status = PlanStatus.HALTED.value
                     await db.commit()
+                    await sandboxed_executor.record_audit_event(
+                        plan_id=plan.id,
+                        step_id=step.id,
+                        event_type=EventType.APPROVAL_REQUIRED,
+                        payload={"step_title": step.title, "tool_name": step.tool_name, "risk_tier": step.risk_tier},
+                        db=db,
+                        severity=Severity.WARNING
+                    )
                     return PlanExecutionSummary(
                         plan_id=plan.id,
                         status=PlanStatus.HALTED.value,
@@ -113,6 +129,14 @@ class AgentOrchestrator:
                 # Hard failure
                 plan.status = PlanStatus.FAILED.value
                 await db.commit()
+                await sandboxed_executor.record_audit_event(
+                    plan_id=plan.id,
+                    step_id=step.id,
+                    event_type=EventType.FAILED,
+                    payload={"step_title": step.title, "error": str(e)},
+                    db=db,
+                    severity=Severity.CRITICAL
+                )
                 return PlanExecutionSummary(
                     plan_id=plan.id,
                     status=PlanStatus.FAILED.value,
@@ -190,7 +214,7 @@ class AgentOrchestrator:
         await sandboxed_executor.record_audit_event(
             plan_id=plan.id,
             step_id=None,
-            event_type=EventType.PLAN_COMPLETED,
+            event_type=EventType.COMPLETED,
             payload={"status": "COMPLETED", "verified_steps": steps_verified},
             db=db
         )

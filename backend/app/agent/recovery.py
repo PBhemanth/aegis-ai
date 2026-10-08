@@ -84,7 +84,7 @@ class RecoveryEngine:
             await sandboxed_executor.record_audit_event(
                 plan_id=plan_id,
                 step_id=step.id,
-                event_type=EventType.RECOVERY_ATTEMPTED,
+                event_type=EventType.FAILED,
                 payload={"status": "EXHAUSTED", "attempts": current_attempts, "max_allowed": self.MAX_RECOVERY_ATTEMPTS},
                 db=db,
                 severity=Severity.CRITICAL
@@ -140,7 +140,7 @@ class RecoveryEngine:
         await sandboxed_executor.record_audit_event(
             plan_id=plan_id,
             step_id=step.id,
-            event_type=EventType.RECOVERY_ATTEMPTED,
+            event_type=EventType.RECOVERING,
             payload={
                 "attempt_number": new_attempt,
                 "discrepancies": failed_assertion_names,
