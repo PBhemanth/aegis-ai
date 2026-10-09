@@ -6,12 +6,12 @@ import {
   Play,
   Search,
   ShieldAlert,
-  Terminal,
   ArrowDown,
   Fingerprint,
   Workflow,
 } from 'lucide-react';
 import { PlanData, RiskTier, StepDefinition, StepStatus } from '../types';
+import { StepResultDetails } from './StepResultDetails';
 
 interface PlanViewerProps {
   plan: PlanData | null;
@@ -274,24 +274,14 @@ export const PlanViewer: React.FC<PlanViewerProps> = ({
                 </div>
               </div>
 
-              {/* Execution Details Receipt */}
-              {step.execution_result_json && (
+              {/* Execution Details & Results */}
+              {(step.execution_result ||
+                step.execution_result_json ||
+                step.error_message ||
+                step.status === 'VERIFIED' ||
+                step.status === 'FAILED') && (
                 <div className="mt-3 pt-2.5 border-t border-slate-800/80 text-xs">
-                  <div className="flex items-center gap-1.5 text-slate-400 mb-1.5 font-mono text-[11px]">
-                    <Terminal className="h-3.5 w-3.5 text-cyan-400" />
-                    <span className="font-bold text-slate-300">// EXECUTION RECEIPT OUTPUT:</span>
-                  </div>
-                  <pre className="bg-slate-950 p-3 rounded-xl text-[11px] font-mono text-cyan-300/90 overflow-x-auto max-h-28 border border-slate-800 shadow-inner">
-                    {step.execution_result_json}
-                  </pre>
-                </div>
-              )}
-
-              {/* Error Message if Failed */}
-              {step.error_message && (
-                <div className="mt-2.5 p-3 rounded-xl bg-rose-950/60 border border-rose-600/70 text-xs text-rose-200 flex items-start gap-2.5 shadow-md">
-                  <AlertTriangle className="h-4 w-4 text-rose-400 shrink-0 mt-0.5" />
-                  <span className="font-mono">{step.error_message}</span>
+                  <StepResultDetails step={step} />
                 </div>
               )}
             </li>

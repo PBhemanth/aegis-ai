@@ -284,18 +284,28 @@ class VerifierEngine:
         proof_data = await verifier.verify(receipt, parameters, context)
 
         # Upsert VerificationProof in database
-        proof_id = f"proof_{uuid.uuid4().hex[:12]}"
-        db_proof = VerificationProof(
-            id=proof_id,
-            step_id=step.id,
-            verifier_name=proof_data.verifier_name,
-            status=proof_data.status,
-            assertions_json=json.dumps([a.model_dump() for a in proof_data.assertions]),
-            external_state_delta_json=json.dumps(proof_data.external_state_delta or {}),
-            latency_ms=proof_data.latency_ms,
-            verified_at=datetime.now(timezone.utc)
-        )
-        db.add(db_proof)
+        proof_query = await db.execute(select(VerificationProof).where(VerificationProof.step_id == step.id))
+        db_proof = proof_query.scalar_one_or_none()
+        if db_proof:
+            db_proof.verifier_name = proof_data.verifier_name
+            db_proof.status = proof_data.status
+            db_proof.assertions_json = json.dumps([a.model_dump() for a in proof_data.assertions])
+            db_proof.external_state_delta_json = json.dumps(proof_data.external_state_delta or {})
+            db_proof.latency_ms = proof_data.latency_ms
+            db_proof.verified_at = datetime.now(timezone.utc)
+        else:
+            proof_id = f"proof_{uuid.uuid4().hex[:12]}"
+            db_proof = VerificationProof(
+                id=proof_id,
+                step_id=step.id,
+                verifier_name=proof_data.verifier_name,
+                status=proof_data.status,
+                assertions_json=json.dumps([a.model_dump() for a in proof_data.assertions]),
+                external_state_delta_json=json.dumps(proof_data.external_state_delta or {}),
+                latency_ms=proof_data.latency_ms,
+                verified_at=datetime.now(timezone.utc)
+            )
+            db.add(db_proof)
 
         if proof_data.status == "PASSED":
             # State machine transition: VERIFYING -> VERIFIED

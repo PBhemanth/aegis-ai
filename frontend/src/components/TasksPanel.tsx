@@ -10,8 +10,11 @@ import {
   Play,
   Fingerprint,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import { PlanData, RiskTier, StepDefinition, StepStatus } from '../types';
+import { StepResultDetails } from './StepResultDetails';
 
 interface TasksPanelProps {
   plan: PlanData | null;
@@ -33,6 +36,14 @@ export const TasksPanel: React.FC<TasksPanelProps> = ({
   onLaunchPreset,
 }) => {
   const [filterMode, setFilterMode] = useState<'all' | 'pending' | 'verified'>('all');
+  const [expandedStepIds, setExpandedStepIds] = useState<Record<string, boolean>>({});
+
+  const toggleStepExpand = (stepId: string) => {
+    setExpandedStepIds((prev) => ({
+      ...prev,
+      [stepId]: prev[stepId] === undefined ? false : !prev[stepId],
+    }));
+  };
 
   const getRiskBadge = (tier: RiskTier) => {
     switch (tier) {
@@ -195,6 +206,15 @@ export const TasksPanel: React.FC<TasksPanelProps> = ({
           <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
             {filteredSteps.map((step, idx) => {
               const isCurrentExecuting = executingStepId === step.id;
+              const hasOutput = Boolean(
+                step.execution_result ||
+                  step.execution_result_json ||
+                  step.error_message ||
+                  step.status === 'VERIFIED' ||
+                  step.status === 'FAILED'
+              );
+              const isExpanded =
+                expandedStepIds[step.id] ?? (step.status === 'VERIFIED' || step.status === 'FAILED');
 
               return (
                 <div
@@ -234,6 +254,18 @@ export const TasksPanel: React.FC<TasksPanelProps> = ({
 
                     {/* Step Action Buttons */}
                     <div className="flex items-center gap-1.5">
+                      {hasOutput && (
+                        <button
+                          type="button"
+                          onClick={() => toggleStepExpand(step.id)}
+                          className="px-2 py-1 bg-slate-900 hover:bg-slate-800 text-cyan-300 border border-slate-700/80 text-[10px] rounded-lg flex items-center gap-1 font-mono transition-colors"
+                          aria-label="Toggle step output"
+                        >
+                          {isExpanded ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                          <span>{isExpanded ? 'Hide' : 'Output'}</span>
+                        </button>
+                      )}
+
                       {step.status === 'AWAITING_APPROVAL' && (
                         <button
                           type="button"
@@ -272,6 +304,13 @@ export const TasksPanel: React.FC<TasksPanelProps> = ({
                       )}
                     </div>
                   </div>
+
+                  {/* Expanded Step Execution Output Details */}
+                  {isExpanded && (
+                    <div className="pt-2 border-t border-slate-800">
+                      <StepResultDetails step={step} />
+                    </div>
+                  )}
                 </div>
               );
             })}

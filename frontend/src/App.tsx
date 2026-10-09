@@ -177,6 +177,9 @@ export const App: React.FC = () => {
         setAgentState('COMPLETED');
       } else {
         setAgentState(executionSummary.status || 'FAILED');
+        if (executionSummary.halt_reason) {
+          setErrorMessage(executionSummary.halt_reason);
+        }
       }
     } catch (err: any) {
       setErrorMessage(err.message || 'Execution failed');

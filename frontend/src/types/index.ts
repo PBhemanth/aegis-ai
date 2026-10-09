@@ -30,6 +30,34 @@ export type PlanStatus =
 
 export type ExecutionMode = 'plan_only' | 'assisted' | 'autonomous';
 
+export interface ArxivPaper {
+  arxiv_id: string;
+  title: string;
+  authors: string[];
+  published?: string;
+  summary: string;
+  pdf_url?: string;
+  primary_category?: string;
+  source_url?: string;
+}
+
+export interface ArxivExecutionResult {
+  query?: string;
+  total_found?: number;
+  papers?: ArxivPaper[];
+}
+
+export interface DocumentSynthesizerResult {
+  file_name?: string;
+  title?: string;
+  content?: string;
+  format?: string;
+  size_bytes?: number;
+  section_count?: number;
+  sha256_checksum?: string;
+  local_sandbox_path?: string | null;
+}
+
 export interface StepDefinition {
   id: string;
   plan_id: string;
@@ -44,6 +72,7 @@ export interface StepDefinition {
   approval_nonce?: string | null;
   action_fingerprint?: string | null;
   execution_result_json?: string | null;
+  execution_result?: Record<string, any> | null;
   error_message?: string | null;
 }
 

@@ -9,8 +9,12 @@ import {
   Fingerprint,
   Play,
   RotateCcw,
+  ChevronDown,
+  ChevronUp,
+  AlertTriangle,
 } from 'lucide-react';
 import { PlanData, StepDefinition } from '../types';
+import { StepResultDetails } from './StepResultDetails';
 
 export interface ChatMessage {
   id: string;
@@ -56,6 +60,15 @@ export const AgentChat: React.FC<AgentChatProps> = ({
     },
   ]);
 
+  const [expandedSteps, setExpandedSteps] = useState<Record<string, boolean>>({});
+
+  const toggleStepExpand = (stepId: string) => {
+    setExpandedSteps((prev) => ({
+      ...prev,
+      [stepId]: prev[stepId] === undefined ? false : !prev[stepId],
+    }));
+  };
+
   const messagesContainerRef = useRef<HTMLDivElement>(null);
 
   // Scroll only the message feed itself. scrollIntoView() would also scroll the
@@ -78,9 +91,29 @@ export const AgentChat: React.FC<AgentChatProps> = ({
     const completed = currentPlan.steps.filter((s) => s.status === 'VERIFIED').length;
     const total = currentPlan.steps.length;
     const isFinished = completed === total && total > 0;
+    const failedStep = currentPlan.steps.find((s) => s.status === 'FAILED');
+    const isFailed = currentPlan.status === 'FAILED' || Boolean(failedStep);
     const needsApproval = currentPlan.steps.find((s) => s.status === 'AWAITING_APPROVAL');
 
-    if (isFinished) {
+    if (isFailed) {
+      setMessages((prev) => {
+        const lastMsg = prev[prev.length - 1];
+        if (lastMsg && lastMsg.text.includes('Mission execution intercepted')) return prev;
+        const errDetail = failedStep?.error_message || 'Step execution encountered an error.';
+        return [
+          ...prev,
+          {
+            id: `error_${Date.now()}`,
+            sender: 'agent',
+            text: `Mission execution intercepted: ${failedStep ? `Step '${failedStep.title}' failed.` : 'Execution halted.'} Error: ${errDetail}`,
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            planId: currentPlan.id,
+            actionType: 'error',
+            stepsSummary: { total, completed, status: 'FAILED' },
+          },
+        ];
+      });
+    } else if (isFinished) {
       setMessages((prev) => {
         const lastMsg = prev[prev.length - 1];
         if (lastMsg && lastMsg.text.includes('Mission verified')) return prev;
@@ -89,7 +122,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
           {
             id: `done_${Date.now()}`,
             sender: 'agent',
-            text: `Mission verified! All ${total} steps executed safely with cryptographic assertions sealed.`,
+            text: `Mission verified! All ${total} steps executed safely with cryptographic assertions sealed. Research summaries and synthesized report are presented below:`,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
             planId: currentPlan.id,
             actionType: 'execution_completed',
@@ -260,59 +293,94 @@ export const AgentChat: React.FC<AgentChatProps> = ({
                       Execution Plan // {currentPlan.id}
                     </span>
 
-                    {currentPlan.steps.map((step) => (
-                      <div
-                        key={step.id}
-                        className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-slate-950/70 border border-slate-800 text-[11px]"
-                      >
-                        <div className="flex items-center gap-1.5 truncate">
-                          {step.status === 'VERIFIED' ? (
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                          ) : step.status === 'AWAITING_APPROVAL' ? (
-                            <ShieldAlert className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                          ) : (
-                            <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                    {currentPlan.steps.map((step) => {
+                      const hasOutput = Boolean(
+                        step.execution_result ||
+                          step.execution_result_json ||
+                          step.error_message ||
+                          step.status === 'VERIFIED' ||
+                          step.status === 'FAILED'
+                      );
+                      const isExpanded =
+                        expandedSteps[step.id] ?? (step.status === 'VERIFIED' || step.status === 'FAILED');
+
+                      return (
+                        <div
+                          key={step.id}
+                          className="p-2 rounded-xl bg-slate-950/70 border border-slate-800 text-[11px] space-y-2"
+                        >
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-1.5 truncate">
+                              {step.status === 'VERIFIED' ? (
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                              ) : step.status === 'FAILED' ? (
+                                <AlertTriangle className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                              ) : step.status === 'AWAITING_APPROVAL' ? (
+                                <ShieldAlert className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                              ) : (
+                                <Clock className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                              )}
+                              <span className="truncate text-slate-200 font-semibold">{step.title}</span>
+                            </div>
+
+                            {/* Interactive Step Buttons */}
+                            <div className="flex items-center gap-1 shrink-0">
+                              {hasOutput && (
+                                <button
+                                  type="button"
+                                  onClick={() => toggleStepExpand(step.id)}
+                                  className="px-2 py-0.5 rounded bg-slate-900 border border-slate-700/80 text-[10px] text-cyan-300 hover:text-white hover:bg-slate-800 flex items-center gap-1 font-mono transition-colors"
+                                  title={isExpanded ? 'Collapse output' : 'Expand output'}
+                                >
+                                  {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                  <span>{isExpanded ? 'Hide' : 'Results'}</span>
+                                </button>
+                              )}
+
+                              {step.status === 'VERIFIED' && (
+                                <button
+                                  type="button"
+                                  onClick={() => onInspectProof(step.id)}
+                                  className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-600/50 text-[10px] flex items-center gap-1 hover:bg-emerald-900 transition-colors"
+                                >
+                                  <Fingerprint className="w-2.5 h-2.5" />
+                                  <span>Proof</span>
+                                </button>
+                              )}
+
+                              {step.status === 'AWAITING_APPROVAL' && (
+                                <button
+                                  type="button"
+                                  onClick={() => onRequestApproval(step)}
+                                  className="px-2 py-0.5 rounded bg-amber-500 text-slate-950 font-bold text-[10px] flex items-center gap-1 hover:bg-amber-400 shadow-sm"
+                                >
+                                  <ShieldAlert className="w-2.5 h-2.5" />
+                                  <span>Authorize</span>
+                                </button>
+                              )}
+
+                              {step.status !== 'VERIFIED' && step.status !== 'AWAITING_APPROVAL' && (
+                                <button
+                                  type="button"
+                                  onClick={() => onExecuteSingleStep(step.id)}
+                                  className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 hover:text-white text-[10px] flex items-center gap-1"
+                                >
+                                  <Play className="w-2.5 h-2.5" />
+                                  <span>Run</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Expanded Step Results / Output */}
+                          {isExpanded && (
+                            <div className="pt-2 border-t border-slate-800/80">
+                              <StepResultDetails step={step} />
+                            </div>
                           )}
-                          <span className="truncate text-slate-300 font-medium">{step.title}</span>
                         </div>
-
-                        {/* Interactive Step Buttons */}
-                        <div className="flex items-center gap-1 shrink-0">
-                          {step.status === 'VERIFIED' && (
-                            <button
-                              type="button"
-                              onClick={() => onInspectProof(step.id)}
-                              className="px-2 py-0.5 rounded bg-emerald-950 text-emerald-300 border border-emerald-600/50 text-[10px] flex items-center gap-1 hover:bg-emerald-900"
-                            >
-                              <Fingerprint className="w-2.5 h-2.5" />
-                              <span>Proof</span>
-                            </button>
-                          )}
-
-                          {step.status === 'AWAITING_APPROVAL' && (
-                            <button
-                              type="button"
-                              onClick={() => onRequestApproval(step)}
-                              className="px-2 py-0.5 rounded bg-amber-500 text-slate-950 font-bold text-[10px] flex items-center gap-1 hover:bg-amber-400 shadow-sm"
-                            >
-                              <ShieldAlert className="w-2.5 h-2.5" />
-                              <span>Authorize</span>
-                            </button>
-                          )}
-
-                          {step.status !== 'VERIFIED' && step.status !== 'AWAITING_APPROVAL' && (
-                            <button
-                              type="button"
-                              onClick={() => onExecuteSingleStep(step.id)}
-                              className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 hover:text-white text-[10px] flex items-center gap-1"
-                            >
-                              <Play className="w-2.5 h-2.5" />
-                              <span>Run</span>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
 

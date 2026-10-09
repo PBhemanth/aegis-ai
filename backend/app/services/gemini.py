@@ -5,6 +5,7 @@ Provides an intelligent deterministic fallback for offline CI/test environments.
 """
 import json
 import logging
+import re
 from typing import List, Optional
 from backend.app.core.config import settings
 from backend.app.schemas.plan import PlanDAG, StepDefinition
@@ -86,10 +87,11 @@ class GeminiService:
         if any(w in goal_lower for w in ["research", "paper", "arxiv", "find", "search", "survey"]):
             query = "GNN cryptocurrency fraud detection"
             # Extract query hint if possible
-            if "about " in goal_lower:
-                query = goal_lower.split("about ")[1].split(" and ")[0].split(",")[0].strip()
-            elif "on " in goal_lower:
-                query = goal_lower.split("on ")[1].split(" and ")[0].split(",")[0].strip()
+            match = re.search(r'\b(?:about|on)\s+([^.\n]+?)(?:\s+and\s+|\.|\,|$)', goal, re.IGNORECASE)
+            if match:
+                query = match.group(1).strip()
+            elif any(k in goal_lower for k in ["graph", "gnn", "fraud"]):
+                query = "graph neural networks fraud detection"
 
             steps.append(StepDefinition(
                 step_id=f"step_{step_idx}",
