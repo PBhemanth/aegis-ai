@@ -1,0 +1,42 @@
+# Version control
+.git
+.gitignore
+
+# Python artifacts
+.venv
+venv/
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.coverage
+htmlcov/
+backend/tests/
+
+# Node & Frontend artifacts
+node_modules/
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# Local SQLite databases and runtime state
+*.db
+*.db-journal
+aegis.db
+aegis.db*
+
+# Environment and secrets
+.env
+.env.*
+*.local
+*.pem
+*.key
+
+# Editor and system files
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

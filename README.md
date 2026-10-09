@@ -234,7 +234,51 @@ If an adversary directly alters an event payload, alters a timestamp, or deletes
 
 ---
 
-## 8. License & Authorship
+## 8. Production Deployment (Render Free Web Service)
+
+CampusPilot is containerized using a multi-stage Docker build that compiles the React TypeScript frontend with Node 20 and packages it directly into the lightweight Python 3.12 FastAPI production runtime. A single free web service serves both the dashboard UI and API endpoints without CORS mismatches or multiple service overhead.
+
+### SQLite Ephemeral Storage Notice
+
+> [!WARNING]
+> **Ephemeral Storage on Render Free Tier**: Render's free tier spins down instances after 15 minutes of inactivity and uses an ephemeral container file system. Any local SQLite database data stored in `./aegis.db` will reset when the service sleeps, restarts, or redeploys. This setup is ideal for live demonstrations, testing, and evaluation. For durable multi-instance data persistence, connect an external PostgreSQL database by setting `DATABASE_URL`.
+
+### Step-by-Step Render Deployment
+
+1. **Sign in to Render**: Navigate to [dashboard.render.com](https://dashboard.render.com) and click **New +** > **Web Service**.
+2. **Connect Repository**: Link your GitHub repository (`aegis-ai` / `campuspilot-ai`).
+3. **Configure Service**:
+   * **Name**: `campuspilot` (or your preferred name)
+   * **Region**: Choose the closest region (e.g. Oregon, Frankfurt, Singapore)
+   * **Branch**: `main`
+   * **Runtime / Environment**: **Docker** (Render will automatically detect the root [`Dockerfile`](Dockerfile))
+   * **Instance Type**: **Free**
+4. **Configure Environment Variables**:
+   Under the **Environment** tab, add the following variables (refer to [`.env.example`](.env.example)):
+
+   | Variable | Required | Description | Example / Notes |
+   | :--- | :--- | :--- | :--- |
+   | `ENVIRONMENT` | Yes | Runtime environment | `production` |
+   | `DEBUG` | Yes | Debug mode toggle | `false` |
+   | `AEGIS_ENCRYPTION_KEY` | Recommended | Fernet 32-byte urlsafe base64 key | Generate via Python: `Fernet.generate_key().decode()` |
+   | `HMAC_SECRET_KEY` | Recommended | 64-char hex string for approval signatures | Generate via Python: `secrets.token_hex(32)` |
+   | `APPROVAL_TTL_SECONDS` | Optional | Nonce expiry in seconds | `600` |
+   | `GEMINI_API_KEY` | Optional | Google Gemini API Key | If unset, the offline topological planner operates automatically |
+   | `GOOGLE_CLIENT_ID` | Optional | Google OAuth 2.0 Web Client ID | For Google Drive & Google Calendar tools |
+   | `GOOGLE_CLIENT_SECRET` | Optional | Google OAuth 2.0 Client Secret | For Google Drive & Google Calendar tools |
+   | `GOOGLE_REDIRECT_URI` | Optional | OAuth callback URL | Automatically defaults to `https://<YOUR-RENDER-URL>/api/auth/google/callback` |
+
+   *(Note: Render automatically injects `PORT` and `RENDER_EXTERNAL_URL`; do not hardcode localhost URLs).*
+
+5. **Deploy & Verify**:
+   * Click **Deploy Web Service**.
+   * Once built, your dashboard is live at `https://<YOUR-APP-NAME>.onrender.com`.
+   * Health check endpoint: `https://<YOUR-APP-NAME>.onrender.com/api/health`.
+   * Interactive API docs: `https://<YOUR-APP-NAME>.onrender.com/docs`.
+
+---
+
+## 9. License & Authorship
 
 Developed for **PromptWars × Error Zero 2026**.  
 Built with FastAPI, React, TypeScript, SQLAlchemy, and Vite.

@@ -1,11 +1,27 @@
 """
 Aegis Core Configuration
 """
+import os
+import secrets
 from typing import List
+from cryptography.fernet import Fernet
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from cryptography.fernet import Fernet
-import secrets
+
+
+def _get_default_cors_origins() -> List[str]:
+    origins = ["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"]
+    render_url = os.getenv("RENDER_EXTERNAL_URL")
+    if render_url and render_url not in origins:
+        origins.append(render_url)
+    return origins
+
+
+def _get_default_google_redirect_uri() -> str:
+    render_url = os.getenv("RENDER_EXTERNAL_URL")
+    if render_url:
+        return f"{render_url.rstrip('/')}/api/auth/google/callback"
+    return "http://localhost:8000/api/auth/google/callback"
 
 
 class Settings(BaseSettings):
@@ -30,12 +46,12 @@ class Settings(BaseSettings):
     APPROVAL_TTL_SECONDS: int = Field(default=600)  # 10 minutes
 
     # CORS
-    CORS_ORIGINS: List[str] = Field(default=["http://localhost:5173", "http://localhost:3000", "http://127.0.0.1:5173"])
+    CORS_ORIGINS: List[str] = Field(default_factory=_get_default_cors_origins)
 
     # Google Integrations (placeholders for env configuration)
     GOOGLE_CLIENT_ID: str = Field(default="")
     GOOGLE_CLIENT_SECRET: str = Field(default="")
-    GOOGLE_REDIRECT_URI: str = Field(default="http://localhost:8000/api/auth/google/callback")
+    GOOGLE_REDIRECT_URI: str = Field(default_factory=_get_default_google_redirect_uri)
     GEMINI_API_KEY: str = Field(default="")
 
 
