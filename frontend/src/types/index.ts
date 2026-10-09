@@ -59,10 +59,16 @@ export interface PlanData {
 }
 
 export interface CapabilityGapReport {
-  is_supported: boolean;
-  unsupported_capabilities: string[];
-  missing_tools: string[];
-  explanation?: string;
+  has_gap: boolean;
+  missing_capabilities: string[];
+  unsupported_features: string[];
+  explanation: string;
+  proposed_alternative?: string | null;
+  can_partially_execute?: boolean;
+  // Optional backwards compatibility aliases
+  is_supported?: boolean;
+  unsupported_capabilities?: string[];
+  missing_tools?: string[];
   alternative_proposals?: string[];
 }
 

@@ -13,6 +13,19 @@ export const CapabilityGapAlert: React.FC<CapabilityGapAlertProps> = ({
   rawGoal,
   onDismiss,
 }) => {
+  const missingList =
+    report.unsupported_features && report.unsupported_features.length > 0
+      ? report.unsupported_features
+      : report.missing_capabilities && report.missing_capabilities.length > 0
+      ? report.missing_capabilities
+      : report.unsupported_capabilities || report.missing_tools || [];
+
+  const alternative =
+    report.proposed_alternative ||
+    (report.alternative_proposals && report.alternative_proposals.length > 0
+      ? report.alternative_proposals.join('; ')
+      : null);
+
   return (
     <div
       role="alert"
@@ -52,7 +65,7 @@ export const CapabilityGapAlert: React.FC<CapabilityGapAlertProps> = ({
             <div className="p-2.5 rounded bg-slate-950/60 border border-slate-800 text-xs">
               <span className="font-semibold text-rose-400 block mb-1">Unavailable Capabilities:</span>
               <ul className="list-disc list-inside text-rose-300 space-y-0.5">
-                {report.unsupported_capabilities.map((cap, i) => (
+                {missingList.map((cap, i) => (
                   <li key={i}>{cap}</li>
                 ))}
               </ul>
@@ -69,17 +82,13 @@ export const CapabilityGapAlert: React.FC<CapabilityGapAlertProps> = ({
             </div>
           )}
 
-          {report.alternative_proposals && report.alternative_proposals.length > 0 && (
+          {alternative && (
             <div className="mt-3 text-xs">
-              <span className="font-semibold text-cyan-400">Supported Alternatives:</span>
-              <ul className="mt-1 space-y-1">
-                {report.alternative_proposals.map((alt, i) => (
-                  <li key={i} className="flex items-center gap-1.5 text-slate-300">
-                    <ArrowRight className="h-3 w-3 text-cyan-400" aria-hidden="true" />
-                    <span>{alt}</span>
-                  </li>
-                ))}
-              </ul>
+              <span className="font-semibold text-cyan-400">Supported Alternative:</span>
+              <div className="mt-1 flex items-start gap-1.5 text-slate-300">
+                <ArrowRight className="h-3 w-3 text-cyan-400 shrink-0 mt-0.5" aria-hidden="true" />
+                <span>{alternative}</span>
+              </div>
             </div>
           )}
         </div>
@@ -87,3 +96,4 @@ export const CapabilityGapAlert: React.FC<CapabilityGapAlertProps> = ({
     </div>
   );
 };
+

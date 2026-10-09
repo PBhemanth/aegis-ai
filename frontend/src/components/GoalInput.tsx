@@ -1,30 +1,22 @@
 import React, { useState } from 'react';
-import { Sparkles, Sliders, Play } from 'lucide-react';
+import {
+  Sparkles,
+  Send,
+  GraduationCap,
+  Search,
+  FileText,
+  Calendar,
+  Upload,
+  Eye,
+  ShieldCheck,
+  Zap,
+} from 'lucide-react';
 import { ExecutionMode } from '../types';
 
 interface GoalInputProps {
   onPlanAndExecute: (goal: string, mode: ExecutionMode) => void;
   isLoading: boolean;
 }
-
-const DEMO_GOALS = [
-  {
-    title: 'GNN Fraud Research & Cited Report',
-    goal: 'Research three recent academic papers on graph neural network (GNN) cryptocurrency fraud detection, synthesize a comparative analysis, and generate a verified markdown report with formal citations.',
-  },
-  {
-    title: 'Study Plan Generation',
-    goal: 'Create an intensive 7-day study plan for upcoming machine learning exams with daily milestones, practice tasks, and review sessions.',
-  },
-  {
-    title: 'Research & Drive Document Export',
-    goal: 'Conduct research on autonomous AI agent execution architectures, synthesize a structured technical report, and save the report to Google Drive in a dedicated project folder.',
-  },
-  {
-    title: 'Inspect Calendar & Schedule Study Sessions',
-    goal: 'Inspect my Google Calendar availability for next week, detect open slots, and propose 2-hour focused revision sessions.',
-  },
-];
 
 export const GoalInput: React.FC<GoalInputProps> = ({ onPlanAndExecute, isLoading }) => {
   const [goal, setGoal] = useState('');
@@ -43,128 +35,205 @@ export const GoalInput: React.FC<GoalInputProps> = ({ onPlanAndExecute, isLoadin
     }
   };
 
+  const setPresetGoal = (presetText: string) => {
+    setGoal(presetText);
+  };
+
   return (
-    <section className="panel-card mb-6" aria-labelledby="goal-section-heading">
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <Sparkles className="h-5 w-5 text-cyan-400" aria-hidden="true" />
-          <h2 id="goal-section-heading" className="text-base font-semibold text-white">
-            Autonomous Agent Goal Dispatcher
-          </h2>
+    <section className="w-full" aria-label="Agent Goal Command Section">
+      {/* Outer Card Container */}
+      <div className="bg-[#0a1122]/90 backdrop-blur-md rounded-2xl p-3 sm:p-4 border border-slate-800/80 shadow-[0_4px_30px_-5px_rgba(0,0,0,0.6)]">
+        <form onSubmit={handleSubmit}>
+          {/* Neon Bordered Command Input Box */}
+          <div className="relative rounded-2xl p-[1.5px] bg-gradient-to-r from-cyan-400/80 via-blue-500/80 to-blue-600/80 shadow-[0_0_18px_rgba(56,189,248,0.18)] transition-all focus-within:shadow-[0_0_28px_rgba(0,242,254,0.35)]">
+            <div className="bg-[#070c18] rounded-2xl p-3 flex items-center gap-3">
+              {/* Glowing Sparkle Icon */}
+              <div className="shrink-0 flex items-center justify-center pl-1 text-cyan-400">
+                <Sparkles className="w-5 h-5 filter drop-shadow-[0_0_8px_rgba(0,242,254,0.6)]" />
+              </div>
+
+              {/* Textarea */}
+              <label htmlFor="agent-goal-input" className="sr-only">
+                Describe an arbitrary natural-language goal
+              </label>
+              <textarea
+                id="agent-goal-input"
+                rows={2}
+                value={goal}
+                onChange={(e) => setGoal(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder="Describe an arbitrary natural-language goal (e.g., 'Research 3 papers on GNN fraud detection and compile a cited report')..."
+                className="flex-1 bg-transparent border-0 text-sm text-white placeholder-slate-400 focus:outline-none resize-none font-sans leading-relaxed py-1 min-w-0"
+                required
+                aria-required="true"
+              />
+
+              {/* Send / Execute Button */}
+              <button
+                type="submit"
+                disabled={isLoading || !goal.trim()}
+                className="shrink-0 h-11 px-3 sm:px-4 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 active:scale-95 text-white text-sm font-semibold flex items-center justify-center gap-2 shadow-lg shadow-cyan-500/20 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
+                aria-label="Plan & Execute Goal"
+                title="Plan & Execute Goal (Ctrl+Enter)"
+              >
+                {isLoading ? (
+                  <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Send className="w-4 h-4 text-white" />
+                )}
+                <span className="hidden sm:inline">{isLoading ? 'Working' : 'Execute'}</span>
+              </button>
+            </div>
+          </div>
+        </form>
+
+        {/* Quick Action Chips directly below prompt */}
+        <div className="flex flex-wrap items-center gap-2 mt-3">
+          {/* 1. Study Plan */}
+          <button
+            type="button"
+            onClick={() =>
+              setPresetGoal(
+                'Create an intensive 7-day study plan for upcoming machine learning exams with daily milestones, practice tasks, and review sessions.'
+              )
+            }
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0d1629] border border-slate-700/70 hover:border-cyan-500/60 text-slate-300 hover:text-white text-xs font-medium transition-all group"
+          >
+            <GraduationCap className="w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition-transform" />
+            <span>Study Plan</span>
+          </button>
+
+          {/* 2. Research */}
+          <button
+            type="button"
+            onClick={() =>
+              setPresetGoal(
+                'Research three recent academic papers on graph neural network (GNN) cryptocurrency fraud detection, synthesize a comparative analysis, and generate a verified markdown report with formal citations.'
+              )
+            }
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0d1629] border border-slate-700/70 hover:border-cyan-500/60 text-slate-300 hover:text-white text-xs font-medium transition-all group"
+          >
+            <Search className="w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition-transform" />
+            <span>Research</span>
+          </button>
+
+          {/* 3. Summarize */}
+          <button
+            type="button"
+            onClick={() =>
+              setPresetGoal(
+                'Conduct research on autonomous AI agent execution architectures, synthesize a structured technical report, and save the report to Google Drive in a dedicated project folder.'
+              )
+            }
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0d1629] border border-slate-700/70 hover:border-cyan-500/60 text-slate-300 hover:text-white text-xs font-medium transition-all group"
+          >
+            <FileText className="w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition-transform" />
+            <span>Summarize</span>
+          </button>
+
+          {/* 4. Create Plan */}
+          <button
+            type="button"
+            onClick={() =>
+              setPresetGoal(
+                'Inspect my Google Calendar availability for next week, detect open slots, and propose 2-hour focused revision sessions.'
+              )
+            }
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0d1629] border border-slate-700/70 hover:border-cyan-500/60 text-slate-300 hover:text-white text-xs font-medium transition-all group"
+          >
+            <Calendar className="w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition-transform" />
+            <span>Create Plan</span>
+          </button>
+
+          {/* 5. Upload File */}
+          <button
+            type="button"
+            onClick={() =>
+              setPresetGoal(
+                'Upload verified technical research report to Google Drive in the CampusPilot folder.'
+              )
+            }
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0d1629] border border-slate-700/70 hover:border-cyan-500/60 text-slate-300 hover:text-white text-xs font-medium transition-all group"
+          >
+            <Upload className="w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition-transform" />
+            <span>Upload File</span>
+          </button>
+
+          {/* 6. GNN Fraud Research Preset (explicitly tests & featured) */}
+          <button
+            type="button"
+            onClick={() =>
+              setPresetGoal(
+                'Research three recent academic papers on graph neural network (GNN) cryptocurrency fraud detection, synthesize a comparative analysis, and generate a verified markdown report with formal citations.'
+              )
+            }
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#0c1833] border border-cyan-500/40 hover:border-cyan-400 text-cyan-300 hover:text-white text-xs font-medium transition-all group shadow-sm shadow-cyan-500/10"
+          >
+            <Sparkles className="w-3.5 h-3.5 text-cyan-400 group-hover:scale-110 transition-transform" />
+            <span>GNN Fraud Research & Cited Report</span>
+          </button>
         </div>
 
-        {/* Mode Selector */}
-        <div className="flex items-center gap-1.5 bg-slate-950 p-1 rounded-lg border border-slate-800" role="radiogroup" aria-label="Execution Mode">
-          <span className="text-xs text-slate-400 px-2 flex items-center gap-1">
-            <Sliders className="h-3 w-3" aria-hidden="true" /> Mode:
+        {/* Compact Mode Selector Bar */}
+        <div className="flex flex-wrap items-center gap-3 mt-3 pt-3 border-t border-slate-800/60 text-xs">
+          <span className="text-slate-400 font-mono text-[11px]">
+            Mode:
           </span>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={mode === 'plan_only'}
-            onClick={() => setMode('plan_only')}
-            className={`text-xs px-2.5 py-1 rounded transition-colors ${
-              mode === 'plan_only'
-                ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 font-medium'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Plan Only
-          </button>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={mode === 'assisted'}
-            onClick={() => setMode('assisted')}
-            className={`text-xs px-2.5 py-1 rounded transition-colors ${
-              mode === 'assisted'
-                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 font-medium'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Assisted (Prompt All)
-          </button>
-          <button
-            type="button"
-            role="radio"
-            aria-checked={mode === 'autonomous'}
-            onClick={() => setMode('autonomous')}
-            className={`text-xs px-2.5 py-1 rounded transition-colors ${
-              mode === 'autonomous'
-                ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/50 font-medium'
-                : 'text-slate-400 hover:text-slate-200'
-            }`}
-          >
-            Autonomous (Safe Auto)
-          </button>
-        </div>
-      </div>
 
-      <form onSubmit={handleSubmit} className="space-y-3">
-        <div>
-          <label htmlFor="agent-goal-input" className="sr-only">
-            Describe your high-level goal in natural language
-          </label>
-          <textarea
-            id="agent-goal-input"
-            rows={3}
-            value={goal}
-            onChange={(e) => setGoal(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder="Describe an arbitrary natural-language goal (e.g., 'Research 3 papers on GNN fraud detection and compile a cited report')..."
-            className="w-full bg-slate-950/80 border border-slate-800 rounded-lg p-3 text-sm text-slate-100 placeholder-slate-500 focus:border-cyan-500 focus:outline-none transition-colors resize-y min-h-[80px]"
-            required
-            aria-required="true"
-          />
-        </div>
-
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-xs text-slate-500">
-            Press <kbd className="px-1.5 py-0.5 bg-slate-800 text-slate-300 rounded border border-slate-700 text-[10px]">Ctrl + Enter</kbd> to dispatch. Aegis dynamically decomposes tasks, evaluates risks, and verifies outcomes.
-          </p>
-
-          <button
-            type="submit"
-            disabled={isLoading || !goal.trim()}
-            className="btn-primary flex items-center gap-2 text-sm"
-            aria-busy={isLoading}
+          <div
+            className="inline-flex items-center gap-1 bg-slate-950/80 p-1 rounded-xl border border-slate-800/80"
+            role="radiogroup"
+            aria-label="Execution Mode"
           >
-            {isLoading ? (
-              <>
-                <span className="animate-spin h-4 w-4 border-2 border-white border-t-transparent rounded-full" aria-hidden="true" />
-                <span>Decomposing & Executing...</span>
-              </>
-            ) : (
-              <>
-                <Play className="h-4 w-4 fill-current" aria-hidden="true" />
-                <span>Plan & Execute Goal</span>
-              </>
-            )}
-          </button>
-        </div>
-      </form>
-
-      {/* Selectable Demo Workflows */}
-      <div className="mt-4 pt-3 border-t border-slate-800/80">
-        <span className="text-xs font-medium text-slate-400 block mb-2">
-          Demonstration Scenarios (Pre-configured multi-step workflows):
-        </span>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
-          {DEMO_GOALS.map((demo, idx) => (
+            {/* Plan Only */}
             <button
-              key={idx}
               type="button"
-              onClick={() => setGoal(demo.goal)}
-              className="text-left p-2.5 rounded-lg bg-slate-950/60 hover:bg-slate-900 border border-slate-800/80 hover:border-cyan-700/60 text-xs text-slate-300 transition-all group flex flex-col justify-between"
+              role="radio"
+              aria-checked={mode === 'plan_only'}
+              onClick={() => setMode('plan_only')}
+              className={`px-3 py-1 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
+                mode === 'plan_only'
+                  ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/50 shadow-sm font-semibold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
             >
-              <div className="font-semibold text-cyan-400 group-hover:text-cyan-300 mb-1">
-                {demo.title}
-              </div>
-              <div className="text-[11px] text-slate-400 line-clamp-2">
-                {demo.goal}
-              </div>
+              <Eye className="w-3 h-3" />
+              <span>Plan Only</span>
             </button>
-          ))}
+
+            {/* Assisted */}
+            <button
+              type="button"
+              role="radio"
+              aria-checked={mode === 'assisted'}
+              onClick={() => setMode('assisted')}
+              className={`px-3 py-1 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 ${
+                mode === 'assisted'
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 shadow-sm font-semibold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <ShieldCheck className="w-3 h-3" />
+              <span>Assisted</span>
+            </button>
+
+            {/* Autonomous */}
+            <button
+              type="button"
+              role="radio"
+              aria-checked={mode === 'autonomous'}
+              aria-label="Autonomous"
+              onClick={() => setMode('autonomous')}
+              className={`px-3 py-1 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                mode === 'autonomous'
+                  ? 'bg-gradient-to-r from-emerald-500/20 to-cyan-500/20 text-emerald-300 border border-emerald-500/60 shadow-sm'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Zap className="w-3 h-3 text-emerald-400" />
+              <span>Autonomous</span>
+            </button>
+          </div>
         </div>
       </div>
     </section>

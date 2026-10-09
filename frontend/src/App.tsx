@@ -1,13 +1,18 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Header } from './components/Header';
+import { TopNav, NavTabId } from './components/TopNav';
 import { GoalInput } from './components/GoalInput';
-import { CapabilityGapAlert } from './components/CapabilityGapAlert';
+import { StatusCards } from './components/StatusCards';
+import { TasksPanel } from './components/TasksPanel';
+import { AgentRadar } from './components/AgentRadar';
+import { AgentChat } from './components/AgentChat';
+import { ExecutionPipeline } from './components/ExecutionPipeline';
 import { PlanViewer } from './components/PlanViewer';
-import { ApprovalModal } from './components/ApprovalModal';
-import { VerificationInspector } from './components/VerificationInspector';
 import { LiveTimeline } from './components/LiveTimeline';
 import { AuditLedgerPanel } from './components/AuditLedgerPanel';
 import { GoogleIntegrationsPanel } from './components/GoogleIntegrationsPanel';
+import { CapabilityGapAlert } from './components/CapabilityGapAlert';
+import { ApprovalModal } from './components/ApprovalModal';
+import { VerificationInspector } from './components/VerificationInspector';
 import { api } from './services/api';
 import {
   AgentEvent,
@@ -20,9 +25,13 @@ import {
   StepDefinition,
   VerificationProof,
 } from './types';
-import { AlertTriangle, X } from 'lucide-react';
+import { AlertTriangle, X, ShieldAlert, CheckCircle2, MessageSquare, ClipboardList } from 'lucide-react';
 
 export const App: React.FC = () => {
+  // Navigation State
+  const [activeTab, setActiveTab] = useState<NavTabId>('dashboard');
+  const [leftPanelMode, setLeftPanelMode] = useState<'chat' | 'dag'>('chat');
+
   // Core State
   const [agentState, setAgentState] = useState<string>('IDLE');
   const [plan, setPlan] = useState<PlanData | null>(null);
@@ -100,7 +109,7 @@ export const App: React.FC = () => {
     }
   };
 
-  // Plan and Execute Pipeline
+  // Dispatch Goal & Execute Plan
   const handlePlanAndExecute = async (goal: string, mode: ExecutionMode) => {
     setIsLoading(true);
     setErrorMessage(null);
@@ -111,7 +120,7 @@ export const App: React.FC = () => {
     try {
       // 1. Pre-flight Capability Boundary Check
       const gapReport = await api.analyzeCapabilityGap(goal);
-      if (!gapReport.is_supported) {
+      if (gapReport.has_gap || gapReport.is_supported === false) {
         setCapabilityGap(gapReport);
         setAgentState('CAPABILITY_GAP');
         setIsLoading(false);
@@ -139,6 +148,7 @@ export const App: React.FC = () => {
       setPlan(newPlan);
       await refreshAuditEvents();
 
+      // If user selected 'plan_only', halt here
       if (mode === 'plan_only') {
         setAgentState('COMPLETED');
         setIsLoading(false);
@@ -156,8 +166,8 @@ export const App: React.FC = () => {
 
       if (executionSummary.status === 'HALTED') {
         setAgentState('APPROVAL_REQUIRED');
-        // Find halted step to prompt user
-        const haltedStep = updatedPlan.steps.find((s) => s.id === executionSummary.current_step_id) ||
+        const haltedStep =
+          updatedPlan.steps.find((s) => s.id === executionSummary.current_step_id) ||
           updatedPlan.steps.find((s) => s.status === 'AWAITING_APPROVAL');
 
         if (haltedStep) {
@@ -173,6 +183,34 @@ export const App: React.FC = () => {
       setAgentState('FAILED');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // Quick Run trigger from header
+  const handleQuickRun = () => {
+    if (rawGoal.trim()) {
+      handlePlanAndExecute(rawGoal.trim(), 'autonomous');
+    } else {
+      const defaultGoal =
+        'Research three recent academic papers on graph neural network (GNN) cryptocurrency fraud detection, synthesize a comparative analysis, and generate a verified markdown report with formal citations.';
+      handlePlanAndExecute(defaultGoal, 'autonomous');
+    }
+  };
+
+  // Launch predefined preset mission
+  const handleLaunchPreset = (preset: 'gnn' | 'study' | 'gate') => {
+    if (preset === 'gnn') {
+      handlePlanAndExecute(
+        'Research three recent academic papers on graph neural network (GNN) cryptocurrency fraud detection, synthesize a comparative analysis, and generate a verified markdown report with formal citations.',
+        'autonomous'
+      );
+    } else if (preset === 'study') {
+      handlePlanAndExecute(
+        'Create an intensive 7-day study plan for upcoming machine learning exams with daily milestones, practice tasks, and review sessions.',
+        'autonomous'
+      );
+    } else if (preset === 'gate') {
+      handlePlanAndExecute('Delete the outdated draft from Google Drive', 'autonomous');
     }
   };
 
@@ -198,7 +236,6 @@ export const App: React.FC = () => {
       }
       setAgentState(result.status || 'VERIFIED');
     } catch (err: any) {
-      // Check if step requires approval
       if (err.message && err.message.includes('human approval')) {
         const step = plan.steps.find((s) => s.id === stepId);
         if (step) {
@@ -249,13 +286,11 @@ export const App: React.FC = () => {
         typed_confirmation: typedConfirmation,
       });
 
-      // Close modal
       const stepToRun = pendingApprovalStep;
       const challengeToUse = approvalChallenge;
       setPendingApprovalStep(null);
       setApprovalChallenge(null);
 
-      // Re-run execution with approval credentials
       setAgentState('EXECUTING');
       await api.executeStep(stepToRun.id, {
         approval_nonce: challengeToUse.approval_nonce,
@@ -263,7 +298,6 @@ export const App: React.FC = () => {
         typed_confirmation: typedConfirmation,
       });
 
-      // Continue whole plan execution
       const summary = await api.executePlan(plan.id);
       const updatedPlan = await api.getPlan(plan.id);
       setPlan(updatedPlan);
@@ -310,7 +344,7 @@ export const App: React.FC = () => {
     }
   };
 
-  // Verify Audit Chain Integrity
+  // Trigger Cryptographic Audit Integrity Check
   const handleVerifyIntegrity = async () => {
     if (!plan?.id) return;
     setIsVerifyingAudit(true);
@@ -319,55 +353,56 @@ export const App: React.FC = () => {
       setAuditVerificationResult(result);
       return result;
     } catch (err: any) {
-      setErrorMessage(err.message || 'Audit integrity check failed');
+      setErrorMessage(`Audit verification error: ${err.message}`);
     } finally {
       setIsVerifyingAudit(false);
     }
   };
 
-  // Google OAuth handlers
-  const handleGoogleConnect = async () => {
-    try {
-      const { authorization_url } = await api.getGoogleLoginUrl();
-      if (authorization_url) {
-        window.open(authorization_url, '_blank', 'width=600,height=700');
-      }
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Google OAuth consent flow initiation failed');
-    }
+  // Google OAuth Handlers
+  const handleGoogleConnect = () => {
+    window.location.href = '/api/google/auth/login';
   };
 
   const handleGoogleLogout = async () => {
+    setIsLoading(true);
     try {
       await api.logoutGoogle();
       await refreshGoogleStatus();
     } catch (err: any) {
-      setErrorMessage(err.message || 'Logout failed');
+      setErrorMessage(`Logout failed: ${err.message}`);
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
-      {/* Top Header */}
-      <Header
-        agentState={agentState}
-        googleStatus={googleStatus}
+    <div className="min-h-screen bg-[#070b14] text-white flex flex-col font-sans">
+      {/* Top Navigation Bar matching reference image */}
+      <TopNav
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        onQuickRun={handleQuickRun}
+        isLoading={isLoading}
         backendOnline={backendOnline}
-        onRefreshGoogle={refreshGoogleStatus}
+        googleStatus={googleStatus}
+        agentState={agentState}
       />
 
-      {/* Main Cockpit */}
-      <main className="dashboard-container flex-1">
+      {/* Main Container */}
+      <main className="flex-1 max-w-[1720px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-4 flex flex-col">
         {/* Error Alert */}
         {errorMessage && (
           <div
             role="alert"
-            className="mb-6 p-4 rounded-xl bg-rose-950/60 border border-rose-500/80 text-rose-200 text-xs flex items-start justify-between gap-3"
+            className="mb-4 p-4 rounded-xl bg-rose-950/80 border border-rose-500 text-rose-200 text-xs flex items-start justify-between gap-3 shadow-xl shadow-rose-950/40"
           >
             <div className="flex items-start gap-2.5">
               <AlertTriangle className="h-5 w-5 text-rose-400 shrink-0 mt-0.5" />
               <div>
-                <strong className="block font-semibold text-rose-100 mb-0.5">Execution Interrupted</strong>
+                <strong className="block font-bold text-rose-100 mb-0.5 font-mono">
+                  // EXECUTION EXCEPTION INTERCEPTED
+                </strong>
                 <span>{errorMessage}</span>
               </div>
             </div>
@@ -381,50 +416,329 @@ export const App: React.FC = () => {
           </div>
         )}
 
-        {/* Goal Input & Demo Dispatcher */}
-        <GoalInput onPlanAndExecute={handlePlanAndExecute} isLoading={isLoading} />
-
-        {/* Transparent Capability Gap Notification */}
+        {/* Capability Gap Alert */}
         {capabilityGap && (
-          <CapabilityGapAlert
-            report={capabilityGap}
-            rawGoal={rawGoal}
-            onDismiss={() => setCapabilityGap(null)}
-          />
+          <div className="mb-4">
+            <CapabilityGapAlert
+              report={capabilityGap}
+              rawGoal={rawGoal}
+              onDismiss={() => setCapabilityGap(null)}
+            />
+          </div>
         )}
 
-        {/* Plan DAG Viewer */}
-        <PlanViewer
-          plan={plan}
-          onExecuteStep={handleExecuteSingleStep}
-          onRequestApproval={handleRequestApproval}
-          onInspectProof={handleInspectProof}
-          executingStepId={executingStepId}
-        />
+        {/* DASHBOARD TAB: Visual Layout Matching Reference Image */}
+        {activeTab === 'dashboard' && (
+          <div className="space-y-3 sm:space-y-4">
+            {/* 1. Hero Command Prompt Box */}
+            <GoalInput onPlanAndExecute={handlePlanAndExecute} isLoading={isLoading} />
 
-        {/* Dual Panel: Telemetry Stream & Audit Ledger */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <LiveTimeline events={liveEvents} isConnected={sseConnected} />
-          <AuditLedgerPanel
-            events={auditEvents}
-            planId={plan?.id || null}
-            onVerifyIntegrity={handleVerifyIntegrity}
-            verificationResult={auditVerificationResult}
-            isVerifying={isVerifyingAudit}
-            onRefreshEvents={refreshAuditEvents}
-          />
-        </div>
+            {/* 2. Status Metric Cards (4 compact cards) */}
+            <StatusCards plan={plan} />
 
-        {/* Google Workspace Integration Panel */}
-        <GoogleIntegrationsPanel
-          status={googleStatus}
-          onConnect={handleGoogleConnect}
-          onLogout={handleGoogleLogout}
-          isLoading={isLoading}
-        />
+            {/* 3. Two-Column Dashboard (Tasks on Left, Agent Radar on Right) */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-4 items-stretch">
+              {/* Left Column: Interactive Chat OR Tasks / Active Missions (~58%) */}
+              <div className="lg:col-span-7 flex flex-col min-w-0">
+                {/* Interactive Mode Toggle Bar */}
+                <div className="flex items-center justify-between mb-2.5 px-0.5">
+                  <div className="inline-flex items-center gap-1 bg-[#0a1122]/90 p-1 rounded-xl border border-slate-800">
+                    <button
+                      type="button"
+                      onClick={() => setLeftPanelMode('chat')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                        leftPanelMode === 'chat'
+                          ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-sm'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <MessageSquare className="w-3.5 h-3.5" />
+                      <span>Interactive Chat</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setLeftPanelMode('dag')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                        leftPanelMode === 'dag'
+                          ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-sm'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <ClipboardList className="w-3.5 h-3.5" />
+                      <span>Mission DAG</span>
+                    </button>
+                  </div>
+                </div>
+
+                {leftPanelMode === 'chat' ? (
+                  <AgentChat
+                    onSendMessage={(g) => handlePlanAndExecute(g, 'autonomous')}
+                    isLoading={isLoading}
+                    currentPlan={plan}
+                    agentState={agentState}
+                    onRequestApproval={handleRequestApproval}
+                    onInspectProof={handleInspectProof}
+                    onExecuteSingleStep={handleExecuteSingleStep}
+                  />
+                ) : (
+                  <TasksPanel
+                    plan={plan}
+                    onExecuteStep={handleExecuteSingleStep}
+                    onRequestApproval={handleRequestApproval}
+                    onInspectProof={handleInspectProof}
+                    executingStepId={executingStepId}
+                    onOpenFullPlanner={() => setActiveTab('planner')}
+                    onLaunchPreset={handleLaunchPreset}
+                  />
+                )}
+              </div>
+
+              {/* Right Column: Autonomous Agent Panel with Orbiting Robot Radar (~42%) */}
+              <div className="lg:col-span-5 flex flex-col min-w-0">
+                <AgentRadar agentState={agentState} />
+              </div>
+            </div>
+
+            {/* 4. Technical details: execution pipeline (collapsed by default) */}
+            {agentState !== 'IDLE' && (
+              <details className="group rounded-xl border border-slate-800/80 bg-[#0a1122]/70">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-2.5 text-xs font-mono uppercase tracking-wider text-slate-300 hover:text-cyan-300 [&::-webkit-details-marker]:hidden">
+                  <span>Execution pipeline</span>
+                  <span className="flex items-center gap-2">
+                    <span className="rounded border border-cyan-800/60 bg-cyan-950/70 px-2 py-0.5 text-[11px] font-bold text-cyan-300">
+                      {agentState}
+                    </span>
+                    <span className="text-slate-500 transition-transform group-open:rotate-180" aria-hidden="true">
+                      ▾
+                    </span>
+                  </span>
+                </summary>
+                <div className="px-3 pb-3">
+                  <ExecutionPipeline agentState={agentState} />
+                </div>
+              </details>
+            )}
+          </div>
+        )}
+
+        {/* TASKS TAB: Focused Tasks and Steps */}
+        {activeTab === 'tasks' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <span>Active Mission Tasks</span>
+                {plan && (
+                  <span className="text-xs font-mono text-cyan-400 bg-cyan-950/60 px-2 py-0.5 rounded border border-cyan-800">
+                    {plan.id}
+                  </span>
+                )}
+              </h2>
+              <button
+                type="button"
+                onClick={() => setActiveTab('dashboard')}
+                className="text-xs text-slate-400 hover:text-cyan-400"
+              >
+                Back to Dashboard
+              </button>
+            </div>
+
+            <TasksPanel
+              plan={plan}
+              onExecuteStep={handleExecuteSingleStep}
+              onRequestApproval={handleRequestApproval}
+              onInspectProof={handleInspectProof}
+              executingStepId={executingStepId}
+              onOpenFullPlanner={() => setActiveTab('planner')}
+            />
+          </div>
+        )}
+
+        {/* PLANNER TAB: Full Plan DAG Graph */}
+        {activeTab === 'planner' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <h2 className="text-xl font-bold text-white">Interactive Plan DAG Graph</h2>
+              <button
+                type="button"
+                onClick={() => setActiveTab('dashboard')}
+                className="text-xs text-slate-400 hover:text-cyan-400"
+              >
+                Back to Dashboard
+              </button>
+            </div>
+
+            <PlanViewer
+              plan={plan}
+              onExecuteStep={handleExecuteSingleStep}
+              onRequestApproval={handleRequestApproval}
+              onInspectProof={handleInspectProof}
+              executingStepId={executingStepId}
+            />
+          </div>
+        )}
+
+        {/* AGENT RUNS TAB: Live SSE Telemetry Feed */}
+        {activeTab === 'runs' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                <span>Agent Execution Telemetry Stream</span>
+                <span
+                  className={`text-xs px-2.5 py-0.5 rounded-full font-mono font-bold ${
+                    sseConnected
+                      ? 'bg-emerald-950 text-emerald-400 border border-emerald-500/50'
+                      : 'bg-rose-950 text-rose-400 border border-rose-500/50'
+                  }`}
+                >
+                  {sseConnected ? 'LIVE SSE CONNECTED' : 'DISCONNECTED'}
+                </span>
+              </h2>
+              <button
+                type="button"
+                onClick={() => setActiveTab('dashboard')}
+                className="text-xs text-slate-400 hover:text-cyan-400"
+              >
+                Back to Dashboard
+              </button>
+            </div>
+
+            <LiveTimeline events={liveEvents} isConnected={sseConnected} />
+          </div>
+        )}
+
+        {/* APPROVALS TAB: Human Permission Gate Challenges */}
+        {activeTab === 'approvals' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <h2 className="text-xl font-bold text-white">Human Permission Gates</h2>
+              <button
+                type="button"
+                onClick={() => setActiveTab('dashboard')}
+                className="text-xs text-slate-400 hover:text-cyan-400"
+              >
+                Back to Dashboard
+              </button>
+            </div>
+
+            {pendingApprovalStep && approvalChallenge ? (
+              <div className="p-6 rounded-2xl bg-amber-950/30 border border-amber-500/50">
+                <div className="flex items-center gap-3 text-amber-300 font-bold mb-3">
+                  <ShieldAlert className="w-6 h-6" />
+                  <span className="text-lg">Pending Authorization Required</span>
+                </div>
+                <p className="text-sm text-slate-300 mb-4">
+                  Step <strong>{pendingApprovalStep.title}</strong> requires explicit human authorization.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => handleRequestApproval(pendingApprovalStep)}
+                  className="px-4 py-2 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold rounded-xl text-xs uppercase tracking-wider"
+                >
+                  Open Approval Challenge Modal
+                </button>
+              </div>
+            ) : (
+              <div className="p-12 text-center rounded-2xl bg-[#0a1122]/90 border border-slate-800 text-slate-400">
+                <CheckCircle2 className="w-10 h-10 text-emerald-400 mx-auto mb-3" />
+                <h3 className="text-base font-bold text-slate-200">No Pending Approvals</h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  High-risk mutating and destructive actions will trigger permission challenges here automatically.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* CALENDAR & DRIVE TAB: Google Workspace Integrations */}
+        {activeTab === 'calendar' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <h2 className="text-xl font-bold text-white">Google Workspace Services</h2>
+              <button
+                type="button"
+                onClick={() => setActiveTab('dashboard')}
+                className="text-xs text-slate-400 hover:text-cyan-400"
+              >
+                Back to Dashboard
+              </button>
+            </div>
+
+            <GoogleIntegrationsPanel
+              status={googleStatus}
+              onConnect={handleGoogleConnect}
+              onLogout={handleGoogleLogout}
+              isLoading={isLoading}
+            />
+          </div>
+        )}
+
+        {/* RESEARCH TAB: Academic Research Preset & Status */}
+        {activeTab === 'research' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <h2 className="text-xl font-bold text-white">Academic Research & arXiv Synthesis</h2>
+              <button
+                type="button"
+                onClick={() => setActiveTab('dashboard')}
+                className="text-xs text-slate-400 hover:text-cyan-400"
+              >
+                Back to Dashboard
+              </button>
+            </div>
+
+            <div className="p-6 rounded-2xl bg-[#0a1122]/90 border border-slate-800 space-y-4">
+              <h3 className="text-base font-bold text-cyan-300">
+                arXiv Academic Paper Synthesis Engine
+              </h3>
+              <p className="text-xs text-slate-300 leading-relaxed">
+                CampusPilot integrates automated web search and arXiv academic query capabilities to gather research papers, synthesize comparative analyses, and produce structured reports with verifiable citations.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveTab('dashboard');
+                  handlePlanAndExecute(
+                    'Research three recent academic papers on graph neural network (GNN) cryptocurrency fraud detection, synthesize a comparative analysis, and generate a verified markdown report with formal citations.',
+                    'autonomous'
+                  );
+                }}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white font-bold text-xs uppercase tracking-wider shadow-lg shadow-cyan-500/20"
+              >
+                Launch GNN Fraud Detection Research
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* ANALYTICS TAB: Cryptographic Audit Ledger */}
+        {activeTab === 'analytics' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <h2 className="text-xl font-bold text-white">
+                Cryptographic Audit Ledger & Chain Integrity
+              </h2>
+              <button
+                type="button"
+                onClick={() => setActiveTab('dashboard')}
+                className="text-xs text-slate-400 hover:text-cyan-400"
+              >
+                Back to Dashboard
+              </button>
+            </div>
+
+            <AuditLedgerPanel
+              events={auditEvents}
+              planId={plan?.id || null}
+              onVerifyIntegrity={handleVerifyIntegrity}
+              verificationResult={auditVerificationResult}
+              isVerifying={isVerifyingAudit}
+              onRefreshEvents={refreshAuditEvents}
+            />
+          </div>
+        )}
       </main>
 
-      {/* Human Approval Modal */}
+      {/* Modal: Human Permission Gate */}
       {pendingApprovalStep && approvalChallenge && (
         <ApprovalModal
           step={pendingApprovalStep}
@@ -439,7 +753,7 @@ export const App: React.FC = () => {
         />
       )}
 
-      {/* Independent Verification Proof Inspector */}
+      {/* Modal: Independent Verification Proof Inspector */}
       {inspectingProof && (
         <VerificationInspector
           proof={inspectingProof}
@@ -452,10 +766,10 @@ export const App: React.FC = () => {
       )}
 
       {/* Footer */}
-      <footer className="border-t border-slate-900 bg-slate-950 py-4 px-6 text-center text-xs text-slate-500 mt-auto">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-2">
-          <span>CampusPilot Autonomous Agent Runtime • PromptWars × Error Zero 2026</span>
-          <span className="font-mono">Plan. Act. Verify. Trust.</span>
+      <footer className="border-t border-slate-900 bg-[#060a14] py-3 px-6 text-center text-xs text-slate-500 mt-auto font-mono">
+        <div className="max-w-[1720px] mx-auto flex flex-wrap items-center justify-between gap-2">
+          <span>CAMPUSPILOT // AUTONOMOUS AGENT RUNTIME</span>
+          <span className="text-cyan-500/80">PLAN. ACT. VERIFY. TRUST.</span>
         </div>
       </footer>
     </div>
