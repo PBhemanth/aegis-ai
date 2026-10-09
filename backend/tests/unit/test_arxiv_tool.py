@@ -74,4 +74,3 @@ async def test_arxiv_tool_executes_query_with_meta_instructions():
     first_paper = result.papers[0]
     assert first_paper.arxiv_id is not None
     assert len(first_paper.summary) > 20
-

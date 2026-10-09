@@ -60,7 +60,6 @@ async def test_verifier_passes_and_marks_step_verified(db_session: AsyncSession)
     # Terminal invariant: step status MUST now be VERIFIED
     assert step.status == StepStatus.VERIFIED.value
 
-
 @pytest.mark.asyncio
 async def test_verifier_fails_on_discrepancy_and_does_not_mark_verified(db_session: AsyncSession):
     plan = Plan(id="p_v2", user_id="u1", raw_goal="Test Discrepancy", goal_summary="Summary", status="RUNNING")
@@ -179,4 +178,3 @@ async def test_arxiv_verifier_passes_and_marks_step_verified(db_session: AsyncSe
     assert proof.status == "PASSED"
     assert all(a.passed for a in proof.assertions)
     assert step.status == StepStatus.VERIFIED.value
-

@@ -170,4 +170,3 @@ async def test_orchestrator_executes_and_verifies_readonly_arxiv_research_plan(c
     assert proof["status"] == "PASSED"
     assert proof["verifier_name"] == "ArxivPaperVerifier"
     assert all(a["passed"] for a in proof["assertions"])
-
