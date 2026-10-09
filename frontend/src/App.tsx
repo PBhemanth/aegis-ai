@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { TopNav, NavTabId } from './components/TopNav';
 import { GoalInput } from './components/GoalInput';
 import { StatusCards } from './components/StatusCards';
@@ -25,7 +25,7 @@ import {
   StepDefinition,
   VerificationProof,
 } from './types';
-import { AlertTriangle, X, ShieldAlert, CheckCircle2, MessageSquare, ClipboardList } from 'lucide-react';
+import { AlertTriangle, X, ShieldAlert, CheckCircle2, MessageSquare, ClipboardList, Play, Lock } from 'lucide-react';
 
 export const App: React.FC = () => {
   // Navigation State
@@ -71,6 +71,18 @@ export const App: React.FC = () => {
     refreshGoogleStatus();
   }, [refreshGoogleStatus]);
 
+  // Debounced refresh for plan and audit events
+  const refreshTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debouncedRefresh = useCallback((planId: string) => {
+    if (refreshTimeoutRef.current) {
+      clearTimeout(refreshTimeoutRef.current);
+    }
+    refreshTimeoutRef.current = setTimeout(() => {
+      api.getPlan(planId).then(setPlan).catch(console.warn);
+      api.getAuditEvents(planId).then(setAuditEvents).catch(console.warn);
+    }, 200);
+  }, []);
+
   // Connect SSE Live Stream
   useEffect(() => {
     const cleanup = api.subscribeSSE(
@@ -84,10 +96,9 @@ export const App: React.FC = () => {
           setAgentState(event.event_type);
         }
 
-        // Refresh plan state if step status changed
+        // Debounce plan and audit refresh on incoming events
         if (plan?.id && event.plan_id === plan.id) {
-          api.getPlan(plan.id).then(setPlan).catch(console.warn);
-          api.getAuditEvents(plan.id).then(setAuditEvents).catch(console.warn);
+          debouncedRefresh(plan.id);
         }
       },
       () => {
@@ -95,8 +106,13 @@ export const App: React.FC = () => {
       }
     );
 
-    return cleanup;
-  }, [plan?.id]);
+    return () => {
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+      }
+      cleanup();
+    };
+  }, [plan?.id, debouncedRefresh]);
 
   // Helper to refresh audit events
   const refreshAuditEvents = async () => {
@@ -122,6 +138,7 @@ export const App: React.FC = () => {
       const gapReport = await api.analyzeCapabilityGap(goal);
       if (gapReport.has_gap || gapReport.is_supported === false) {
         setCapabilityGap(gapReport);
+        setErrorMessage(gapReport.explanation);
         setAgentState('CAPABILITY_GAP');
         setIsLoading(false);
         return;
@@ -134,6 +151,7 @@ export const App: React.FC = () => {
 
       if (genResponse.status === 'CAPABILITY_GAP' && genResponse.capability_gap) {
         setCapabilityGap(genResponse.capability_gap);
+        setErrorMessage(genResponse.capability_gap.explanation);
         setAgentState('CAPABILITY_GAP');
         setIsLoading(false);
         return;
@@ -148,14 +166,42 @@ export const App: React.FC = () => {
       setPlan(newPlan);
       await refreshAuditEvents();
 
-      // If user selected 'plan_only', halt here
+      // If user selected 'plan_only', halt here in review mode (read-only)
       if (mode === 'plan_only') {
-        setAgentState('COMPLETED');
+        setAgentState('PLANNING');
         setIsLoading(false);
         return;
       }
 
-      // 3. Execute Plan (Assisted or Autonomous)
+      // Assisted mode: Execute only the first executable step, then pause for user review
+      if (mode === 'assisted') {
+        setAgentState('EXECUTING');
+        const firstExecutableStep = newPlan.steps.find((s) => s.status === 'PROPOSED');
+        if (firstExecutableStep) {
+          try {
+            const result = await api.executeStep(firstExecutableStep.id);
+            const updatedPlan = await api.getPlan(newPlan.id);
+            setPlan(updatedPlan);
+            await refreshAuditEvents();
+            if (result.proof) {
+              setInspectingProof(result.proof);
+              setInspectingStepTitle(firstExecutableStep.title);
+            }
+            setAgentState(result.status || 'VERIFIED');
+          } catch (err: any) {
+            if (err.message && err.message.includes('human approval')) {
+              handleRequestApproval(firstExecutableStep);
+            } else {
+              setErrorMessage(err.message || 'Step execution failed');
+              setAgentState('FAILED');
+            }
+          }
+        }
+        setIsLoading(false);
+        return;
+      }
+
+      // 3. Execute Plan (Autonomous: runs all non-gated steps end-to-end)
       setAgentState('EXECUTING');
       const executionSummary = await api.executePlan(newPlan.id);
 
@@ -189,8 +235,50 @@ export const App: React.FC = () => {
     }
   };
 
+  // Execute existing reviewed plan directly
+  const handleExecuteCurrentPlan = async () => {
+    if (!plan) return;
+    setIsLoading(true);
+    setErrorMessage(null);
+    setAgentState('EXECUTING');
+
+    try {
+      const executionSummary = await api.executePlan(plan.id);
+      const updatedPlan = await api.getPlan(plan.id);
+      setPlan(updatedPlan);
+      await refreshAuditEvents();
+
+      if (executionSummary.status === 'HALTED') {
+        setAgentState('APPROVAL_REQUIRED');
+        const haltedStep =
+          updatedPlan.steps.find((s) => s.id === executionSummary.current_step_id) ||
+          updatedPlan.steps.find((s) => s.status === 'AWAITING_APPROVAL');
+
+        if (haltedStep) {
+          handleRequestApproval(haltedStep);
+        }
+      } else if (executionSummary.status === 'COMPLETED') {
+        setAgentState('COMPLETED');
+      } else {
+        setAgentState(executionSummary.status || 'FAILED');
+        if (executionSummary.halt_reason) {
+          setErrorMessage(executionSummary.halt_reason);
+        }
+      }
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Execution failed');
+      setAgentState('FAILED');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   // Quick Run trigger from header
   const handleQuickRun = () => {
+    if (plan && (plan.status === 'PLANNING' || plan.steps.some((s) => s.status === 'PROPOSED'))) {
+      handleExecuteCurrentPlan();
+      return;
+    }
     if (rawGoal.trim()) {
       handlePlanAndExecute(rawGoal.trim(), 'autonomous');
     } else {
@@ -434,7 +522,101 @@ export const App: React.FC = () => {
         {activeTab === 'dashboard' && (
           <div className="space-y-3 sm:space-y-4">
             {/* 1. Hero Command Prompt Box */}
-            <GoalInput onPlanAndExecute={handlePlanAndExecute} isLoading={isLoading} />
+            <GoalInput
+              onPlanAndExecute={handlePlanAndExecute}
+              isLoading={isLoading}
+              googleStatus={googleStatus}
+            />
+
+            {/* High-Risk Human Approval Gate Banner */}
+            {pendingApprovalStep && approvalChallenge && (
+              <div
+                role="alert"
+                className="p-4 rounded-2xl bg-amber-950/70 border-2 border-amber-500 text-amber-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xl shadow-amber-950/40"
+              >
+                <div className="flex items-start gap-3">
+                  <ShieldAlert className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold font-mono tracking-wider text-amber-300 uppercase">
+                        Human Authorization Required
+                      </span>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-900/80 text-amber-200 border border-amber-600/70 font-bold">
+                        {approvalChallenge.risk_evaluation?.risk_tier || 'TIER 3 DESTRUCTIVE'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-200 mt-1">
+                      Step <strong>{pendingApprovalStep.title}</strong> halted at safety gate. Operator authorization required.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleRejectAction('Denied by operator')}
+                    disabled={isLoading}
+                    className="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-700 hover:border-rose-500 text-rose-300 hover:text-rose-100 text-xs font-semibold cursor-pointer transition-all"
+                  >
+                    Reject
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleRequestApproval(pendingApprovalStep)}
+                    disabled={isLoading}
+                    className="px-4 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 active:scale-95 text-slate-950 font-bold text-xs flex items-center gap-1.5 cursor-pointer shadow-md shadow-amber-500/25 transition-all"
+                  >
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>Review & Authorize</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Plan Review & Direct Execution Banner */}
+            {plan && (plan.status === 'PLANNING' || plan.steps.some((s) => s.status === 'PROPOSED')) && !pendingApprovalStep && (
+              <div className="p-3.5 sm:p-4 rounded-2xl bg-[#0c1833]/90 border border-cyan-500/50 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-lg shadow-cyan-950/40">
+                <div className="flex items-start sm:items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-cyan-950 border border-cyan-500/60 flex items-center justify-center text-cyan-400 shrink-0 mt-0.5 sm:mt-0">
+                    <ClipboardList className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-cyan-300 font-mono tracking-wider">
+                        MISSION PLAN IN REVIEW
+                      </span>
+                      <span className="text-[10px] font-mono text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">
+                        {plan.id}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-300 mt-0.5">
+                      {plan.steps.length} steps synthesized. Review the plan below, then execute when ready.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                  {leftPanelMode !== 'dag' && (
+                    <button
+                      type="button"
+                      onClick={() => setLeftPanelMode('dag')}
+                      className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 hover:border-slate-500 text-slate-300 hover:text-white text-xs font-medium cursor-pointer transition-all"
+                    >
+                      View Steps DAG
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={handleExecuteCurrentPlan}
+                    disabled={isLoading}
+                    className="px-4 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 active:scale-95 text-slate-950 font-bold text-xs flex items-center gap-1.5 shadow-md shadow-emerald-500/25 cursor-pointer transition-all disabled:opacity-50"
+                  >
+                    <Play className="w-3.5 h-3.5 fill-current text-slate-950" />
+                    <span>Execute Plan</span>
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* 2. Status Metric Cards (4 compact cards) */}
             <StatusCards plan={plan} />
@@ -449,7 +631,7 @@ export const App: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setLeftPanelMode('chat')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
                         leftPanelMode === 'chat'
                           ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-sm'
                           : 'text-slate-400 hover:text-slate-200'
@@ -461,7 +643,7 @@ export const App: React.FC = () => {
                     <button
                       type="button"
                       onClick={() => setLeftPanelMode('dag')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all ${
+                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all cursor-pointer ${
                         leftPanelMode === 'dag'
                           ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-sm'
                           : 'text-slate-400 hover:text-slate-200'
@@ -475,8 +657,9 @@ export const App: React.FC = () => {
 
                 {leftPanelMode === 'chat' ? (
                   <AgentChat
-                    onSendMessage={(g) => handlePlanAndExecute(g, 'autonomous')}
+                    onSendMessage={(g) => handlePlanAndExecute(g, 'plan_only')}
                     isLoading={isLoading}
+                    errorMessage={errorMessage}
                     currentPlan={plan}
                     agentState={agentState}
                     onRequestApproval={handleRequestApproval}
@@ -496,9 +679,14 @@ export const App: React.FC = () => {
                 )}
               </div>
 
-              {/* Right Column: Autonomous Agent Panel with Orbiting Robot Radar (~42%) */}
+              {/* Right Column: Agent Runtime Telemetry (~42%) */}
               <div className="lg:col-span-5 flex flex-col min-w-0">
-                <AgentRadar agentState={agentState} />
+                <AgentRadar
+                  agentState={agentState}
+                  plan={plan}
+                  googleStatus={googleStatus}
+                  isLoading={isLoading}
+                />
               </div>
             </div>
 

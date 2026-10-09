@@ -34,6 +34,7 @@ export interface ChatMessage {
 interface AgentChatProps {
   onSendMessage: (goal: string) => void;
   isLoading: boolean;
+  errorMessage?: string | null;
   currentPlan: PlanData | null;
   agentState: string;
   onRequestApproval: (step: StepDefinition) => void;
@@ -44,6 +45,7 @@ interface AgentChatProps {
 export const AgentChat: React.FC<AgentChatProps> = ({
   onSendMessage,
   isLoading,
+  errorMessage,
   currentPlan,
   agentState,
   onRequestApproval,
@@ -55,7 +57,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
     {
       id: 'welcome_1',
       sender: 'agent',
-      text: "Hello! I am CampusPilot, your autonomous agent runtime. What mission should I execute today?",
+      text: 'Hi! I can explain CampusPilot, show the current mission status, or build a plan for a supported task. Plans are review-only here; use Run when you are ready to execute.',
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     },
   ]);
@@ -70,6 +72,8 @@ export const AgentChat: React.FC<AgentChatProps> = ({
   };
 
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const announcedPlanIdRef = useRef<string | null>(null);
+  const lastReportedErrorRef = useRef<string | null>(null);
 
   // Scroll only the message feed itself. scrollIntoView() would also scroll the
   // whole page to the chat panel on mount and hide the goal input above it.
@@ -94,6 +98,27 @@ export const AgentChat: React.FC<AgentChatProps> = ({
     const failedStep = currentPlan.steps.find((s) => s.status === 'FAILED');
     const isFailed = currentPlan.status === 'FAILED' || Boolean(failedStep);
     const needsApproval = currentPlan.steps.find((s) => s.status === 'AWAITING_APPROVAL');
+
+    if (
+      currentPlan.status === 'PLANNING' &&
+      currentPlan.steps.length > 0 &&
+      currentPlan.steps.every((step) => step.status === 'PROPOSED') &&
+      announcedPlanIdRef.current !== currentPlan.id
+    ) {
+      announcedPlanIdRef.current = currentPlan.id;
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `plan_${currentPlan.id}`,
+          sender: 'agent',
+          text: `I made a plan with ${total} step${total === 1 ? '' : 's'}. Review it below, then use the dashboard Run button when you are ready. Risky actions will still ask for approval.`,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          planId: currentPlan.id,
+          actionType: 'plan_generated',
+          stepsSummary: { total, completed, status: currentPlan.status },
+        },
+      ]);
+    }
 
     if (isFailed) {
       setMessages((prev) => {
@@ -151,6 +176,27 @@ export const AgentChat: React.FC<AgentChatProps> = ({
     }
   }, [currentPlan]);
 
+  useEffect(() => {
+    if (!errorMessage) {
+      lastReportedErrorRef.current = null;
+      return;
+    }
+    if (lastReportedErrorRef.current === errorMessage) return;
+
+    lastReportedErrorRef.current = errorMessage;
+    setMessages((prev) => {
+      const lastMessage = prev[prev.length - 1];
+      if (lastMessage?.actionType === 'error' && lastMessage.text === errorMessage) return prev;
+      return [...prev, {
+        id: `error_${Date.now()}`,
+        sender: 'agent',
+        text: errorMessage,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        actionType: 'error',
+      }];
+    });
+  }, [errorMessage]);
+
   const handleSend = (textToSend?: string) => {
     const text = (textToSend || inputText).trim();
     if (!text || isLoading) return;
@@ -166,21 +212,46 @@ export const AgentChat: React.FC<AgentChatProps> = ({
     setMessages((prev) => [...prev, userMsg]);
     setInputText('');
 
-    // Trigger execution
-    onSendMessage(text);
+    const normalizedText = text.toLowerCase();
+    let reply: string | null = null;
 
-    // Initial agent acknowledgement
-    setTimeout(() => {
+    if (/^(hi|hello|hey|good morning|good afternoon|greetings)\b/.test(normalizedText)) {
+      reply = 'Hey! I am CampusPilot (Aegis AI), your autonomous agent runtime. I can help you plan and execute academic research on arXiv, synthesize cited technical briefs, or manage study schedules with deterministic safety verification. What mission would you like to plan?';
+    } else if (/\b(who are you|what is campuspilot|what is aegis|project|about)\b/.test(normalizedText)) {
+      reply = 'CampusPilot (Aegis AI) is an autonomous agent runtime built for campus research, study planning, and verified tool execution. It enforces strict blast-radius risk tiers, HMAC-SHA256 human approval gates for destructive actions, and post-action state verification.';
+    } else if (/\b(tools|what tools|available tools|supported tools|capabilities)\b/.test(normalizedText)) {
+      reply = 'Registered tools in runtime: web_search_arxiv (real paper search), document_synthesizer (markdown report compilation), google_drive_folder_manage, google_drive_upload_file, google_drive_delete_file (protected by human permission gate), and google_calendar_check_slots & google_calendar_create_event.';
+    } else if (/\b(help|how do you work|how to use|instructions)\b/.test(normalizedText)) {
+      reply = 'To run a mission: 1) Describe a goal above or pick a quick prompt. 2) Review the synthesized Plan DAG (Plan Only mode stays read-only). 3) Click Run or switch to Assisted/Autonomous to execute. Destructive actions will prompt for explicit human confirmation.';
+    } else if (/\b(status|progress|mission status|current state)\b/.test(normalizedText)) {
+      if (!currentPlan) {
+        reply = 'There is no mission plan yet. Describe a task above or select a quick prompt to synthesize a new execution DAG.';
+      } else {
+        const verified = currentPlan.steps.filter((step) => step.status === 'VERIFIED').length;
+        const failed = currentPlan.steps.filter((step) => step.status === 'FAILED').length;
+        const total = currentPlan.steps.length;
+        reply = `Current mission: ${currentPlan.status}. ${verified} of ${total} steps verified${failed ? `; ${failed} failed` : ''}. Goal: "${currentPlan.goal_summary || currentPlan.raw_goal}".`;
+      }
+    } else if (!/\b(research|find|search|create|make|plan|check|summari[sz]|compare|delete|upload|schedule|draft|analy[sz])\b/.test(normalizedText)) {
+      reply = 'AI reasoning is currently operating in local deterministic mode (no Gemini API key configured). I can answer questions about system status, tools, and capabilities, or synthesize a structured execution plan when you describe a supported task.';
+    }
+
+    if (reply) {
       setMessages((prev) => [
         ...prev,
         {
-          id: `ack_${Date.now()}`,
+          id: `reply_${Date.now()}`,
           sender: 'agent',
-          text: `Analyzing goal, checking capability boundaries, and synthesizing execution DAG...`,
+          text: reply!,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
         },
       ]);
-    }, 300);
+      return;
+    }
+
+    // Trigger execution
+    onSendMessage(text);
+
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -195,7 +266,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
       {
         id: `welcome_${Date.now()}`,
         sender: 'agent',
-        text: "Chat cleared. What mission should I execute next?",
+        text: 'Chat cleared. Describe a task and I will build a plan for it.',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       },
     ]);
@@ -416,7 +487,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
               <span className="w-2 h-2 rounded-full bg-cyan-400 animate-bounce" />
               <span className="w-2 h-2 rounded-full bg-blue-400 animate-bounce [animation-delay:0.2s]" />
               <span className="w-2 h-2 rounded-full bg-sky-400 animate-bounce [animation-delay:0.4s]" />
-              <span className="text-[11px] font-mono text-cyan-400 ml-1">Executing Mission...</span>
+            <span className="text-[11px] font-mono text-cyan-400 ml-1">Planning your task...</span>
             </div>
           </div>
         )}
@@ -445,7 +516,7 @@ export const AgentChat: React.FC<AgentChatProps> = ({
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Type a goal or message (e.g. 'Research papers on GNN fraud')..."
+            placeholder="Ask for help or describe a task to plan..."
             className="w-full bg-[#0c1427] border border-slate-800/80 rounded-xl px-3.5 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-cyan-500 font-sans"
             disabled={isLoading}
           />

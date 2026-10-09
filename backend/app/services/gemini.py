@@ -6,10 +6,12 @@ Provides an intelligent deterministic fallback for offline CI/test environments.
 import json
 import logging
 import re
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
 from backend.app.core.config import settings
 from backend.app.schemas.plan import PlanDAG, StepDefinition
-from backend.app.agent.tool_registry import ToolRegistry, tool_registry
+
+if TYPE_CHECKING:
+    from backend.app.agent.tool_registry import ToolRegistry
 
 logger = logging.getLogger("aegis.gemini")
 
@@ -28,13 +30,17 @@ class GeminiService:
     async def generate_plan_dag(
         self,
         goal: str,
-        registry: Optional[ToolRegistry] = None
+        registry: Optional["ToolRegistry"] = None
     ) -> PlanDAG:
         """
         Invokes Gemini to synthesize a structured PlanDAG from a natural language goal.
         Falls back to deterministic synthesis if API key is not configured or in offline mode.
         """
-        active_registry = registry or tool_registry
+        if registry is None:
+            from backend.app.agent.tool_registry import tool_registry
+            active_registry = tool_registry
+        else:
+            active_registry = registry
 
         if self.client:
             try:
@@ -44,7 +50,7 @@ class GeminiService:
 
         return self._synthesize_fallback_plan(goal, active_registry)
 
-    async def _call_gemini_api(self, goal: str, registry: ToolRegistry) -> PlanDAG:
+    async def _call_gemini_api(self, goal: str, registry: "ToolRegistry") -> PlanDAG:
         """Calls Google GenAI client with structured schema output."""
         from google.genai import types
 
@@ -57,7 +63,10 @@ class GeminiService:
             f"1. Choose the most appropriate tools to satisfy the goal safely.\n"
             f"2. Specify prerequisite step dependencies in `dependencies` (e.g. step_2 depends on ['step_1']).\n"
             f"3. Never create cyclic dependencies.\n"
-            f"4. Do NOT attempt to assess or downgrade safety risks; the Aegis Risk Engine enforces safety.\n\n"
+            f"4. Do NOT attempt to assess or downgrade safety risks; the Aegis Risk Engine enforces safety.\n"
+            f"5. Explicit Prohibitions: Treat every explicit user prohibition as an absolute hard constraint. If the user specifies 'do not use Drive', 'do not use Calendar', 'do not create, change, or delete files', or any other negation, you MUST NOT include any tool or step relating to that action.\n"
+            f"6. Never create a step merely because a keyword appeared in a negative context (e.g. 'do not delete' must not trigger delete tools).\n"
+            f"7. Do not add unrelated tools or steps. Include only the minimal steps strictly necessary to fulfill the requested goal.\n\n"
             f"User Goal: {goal}"
         )
 
@@ -74,19 +83,68 @@ class GeminiService:
         data = json.loads(response.text)
         return PlanDAG(**data)
 
-    def _synthesize_fallback_plan(self, goal: str, registry: ToolRegistry) -> PlanDAG:
+    def _synthesize_fallback_plan(self, goal: str, registry: Optional["ToolRegistry"] = None) -> PlanDAG:
         """
         Deterministic, dynamic plan generator for offline test environments.
-        Inspects goal semantics and composes appropriate registered tools dynamically.
+        Inspects goal semantics, respects explicit negative constraints, and composes appropriate registered tools dynamically.
         """
         goal_lower = goal.lower()
         steps: List[StepDefinition] = []
         step_idx = 1
 
-        # Check for research component
-        if any(w in goal_lower for w in ["research", "paper", "arxiv", "find", "search", "survey"]):
+        def is_forbidden(*terms: str) -> bool:
+            """Check if capability terms are explicitly forbidden anywhere in the goal."""
+            for term in terms:
+                if re.search(rf"\b(?:do\s+not|don't|dont|never|avoid|without|no|disable|disallow)\b[^.!?\n]{{0,60}}\b{re.escape(term)}\b", goal_lower):
+                    return True
+                if re.search(rf"\b{re.escape(term)}\b[^.!?\n]{{0,40}}\b(?:forbidden|prohibited|disabled|disallowed|off\s+limits|excluded)\b", goal_lower):
+                    return True
+            return False
+
+        drive_forbidden = is_forbidden("drive", "google drive", "cloud storage")
+        calendar_forbidden = is_forbidden("calendar", "google calendar", "schedule", "meeting", "events?")
+        files_forbidden = (
+            is_forbidden("file", "files", "document", "report", "brief")
+            or bool(re.search(r"\b(?:do\s+not|don't|dont|never|avoid|without)\b[^.!?\n]{0,60}\b(?:create|write|save|generate|modify|change|edit|upload)\b[^.!?\n]{0,30}\bfiles?\b", goal_lower))
+            or bool(re.search(r"\b(?:no\s+files?|no\s+file\s+creation|read-only|read\s+only)\b", goal_lower))
+        )
+        delete_forbidden = (
+            is_forbidden("delete", "purge", "remove", "trash", "clean", "destroy")
+            or bool(re.search(r"\b(?:do\s+not|don't|dont|never|avoid|without)\b[^.!?\n]{0,60}\b(?:delete|purge|remove|trash|destroy)\b", goal_lower))
+        )
+        arxiv_forbidden = is_forbidden("arxiv", "paper", "papers", "research", "search")
+
+        def is_requested(*terms: str) -> bool:
+            """Check if capability terms appear affirmatively (not in a negated clause)."""
+            for term in terms:
+                for match in re.finditer(rf"\b{re.escape(term)}\b", goal_lower):
+                    sentence_start = max(
+                        goal_lower.rfind(mark, 0, match.start())
+                        for mark in (".", "!", "?", "\n", ";")
+                    ) + 1
+                    clause = goal_lower[sentence_start:match.start()]
+                    negation = re.search(r"\b(?:do\s+not|don't|dont|never|avoid|without|no)\b", clause)
+                    if not negation:
+                        return True
+                    if re.search(r"\b(?:but|however|instead|except)\b", clause[negation.end():]):
+                        return True
+            return False
+
+        def paper_count() -> int:
+            counts = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+                      "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10}
+            match = re.search(
+                r"\b(?:find|search|research|identify|compare)\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\b",
+                goal_lower,
+            )
+            if not match:
+                return 3
+            value = match.group(1)
+            return max(1, min(10, int(value) if value.isdigit() else counts[value]))
+
+        # 1. Academic Research Component (arXiv)
+        if not arxiv_forbidden and is_requested("research", "paper", "papers", "arxiv", "find", "search", "survey", "literature"):
             query = "GNN cryptocurrency fraud detection"
-            # Extract query hint if possible
             match = re.search(r'\b(?:about|on)\s+([^.\n]+?)(?:\s+and\s+|\.|\,|$)', goal, re.IGNORECASE)
             if match:
                 query = match.group(1).strip()
@@ -98,15 +156,20 @@ class GeminiService:
                 step_order=step_idx,
                 title="Search arXiv Research Papers",
                 tool_name="web_search_arxiv",
-                tool_parameters={"query": query, "max_results": 3},
+                tool_parameters={"query": query, "max_results": paper_count()},
                 dependencies=[],
                 expected_output_type="PaperMetadataList",
                 rationale="Retrieve authoritative scientific literature matching the user query."
             ))
             step_idx += 1
 
-        # Check for report / summary synthesis component
-        if any(w in goal_lower for w in ["summariz", "compare", "synthesiz", "report", "brief", "draft"]):
+        # 2. Report / Document Synthesis Component
+        synthesis_requested = bool(
+            re.search(r"\b(?:summariz|synthesiz|compile|write|generate)\b[^.!?\n]{0,30}\b(?:report|summary|brief|analysis|comparison|document|plan)\b", goal_lower)
+            or re.search(r"\b(?:comparative\s+analysis|technical\s+brief|formal\s+citations|study\s+plan)\b", goal_lower)
+            or (is_requested("summarize", "summarise", "summary", "compare", "comparison", "synthesize", "synthesise", "report", "brief") and not re.search(r"\b(?:delete|trash|remove|purge)\b[^.!?\n]{0,30}\bdraft\b", goal_lower))
+        )
+        if not files_forbidden and synthesis_requested:
             prev_deps = [f"step_{step_idx - 1}"] if step_idx > 1 else []
             steps.append(StepDefinition(
                 step_id=f"step_{step_idx}",
@@ -124,9 +187,13 @@ class GeminiService:
             ))
             step_idx += 1
 
-        # Check for Google Drive folder / upload component
-        if any(w in goal_lower for w in ["drive", "save", "upload"]):
-            # Step A: Ensure folder
+        # 3. Google Drive Workspace & Upload Component (Storage, not deletion)
+        drive_storage_requested = bool(
+            re.search(r"\b(?:save|upload|store|backup|export|persist|put)\b[^.!?\n]{0,40}\b(?:to|in|into|on)\b[^.!?\n]{0,20}\b(?:drive|cloud)\b", goal_lower)
+            or re.search(r"\b(?:upload\s+file|save\s+report|store\s+brief|drive\s+export)\b", goal_lower)
+            or (re.search(r"\b(?:save|upload|store)\b", goal_lower) and "drive" in goal_lower and not re.search(r"\bdelete\b[^.!?\n]{0,40}\bdrive\b", goal_lower))
+        )
+        if not drive_forbidden and not files_forbidden and drive_storage_requested:
             folder_dep = [f"step_{step_idx - 1}"] if step_idx > 1 else []
             folder_step_id = f"step_{step_idx}"
             steps.append(StepDefinition(
@@ -141,7 +208,6 @@ class GeminiService:
             ))
             step_idx += 1
 
-            # Step B: Upload file
             steps.append(StepDefinition(
                 step_id=f"step_{step_idx}",
                 step_order=step_idx,
@@ -158,8 +224,9 @@ class GeminiService:
             ))
             step_idx += 1
 
-        # Check for Google Drive deletion component
-        if any(w in goal_lower for w in ["delete", "purge", "clean", "trash", "remove"]):
+        # 4. Google Drive Deletion Component (Destructive - Gate Protected)
+        delete_requested = is_requested("delete", "purge", "trash", "clean up", "remove")
+        if not drive_forbidden and not delete_forbidden and delete_requested:
             steps.append(StepDefinition(
                 step_id=f"step_{step_idx}",
                 step_order=step_idx,
@@ -176,9 +243,8 @@ class GeminiService:
             ))
             step_idx += 1
 
-        # Check for Calendar component
-        if any(w in goal_lower for w in ["calendar", "schedule", "meeting", "review"]):
-            # Check slots first
+        # 5. Google Calendar Scheduling Component
+        if not calendar_forbidden and is_requested("calendar", "schedule", "meeting", "book", "slot"):
             check_dep = [f"step_{step_idx - 1}"] if step_idx > 1 else []
             slot_step_id = f"step_{step_idx}"
             steps.append(StepDefinition(
@@ -196,7 +262,6 @@ class GeminiService:
             ))
             step_idx += 1
 
-            # Schedule event
             steps.append(StepDefinition(
                 step_id=f"step_{step_idx}",
                 step_order=step_idx,
@@ -214,18 +279,30 @@ class GeminiService:
             ))
             step_idx += 1
 
-        # Fallback generic single-step if no known keywords matched
+        # 6. Fallback if no steps were added
         if not steps:
-            steps.append(StepDefinition(
-                step_id="step_1",
-                step_order=1,
-                title="Synthesize Goal Response",
-                tool_name="document_synthesizer",
-                tool_parameters={"title": "General Task Execution", "content": f"Execution plan for: {goal}"},
-                dependencies=[],
-                expected_output_type="CompiledDocument",
-                rationale="Execute user goal using sandboxed synthesis."
-            ))
+            if not files_forbidden:
+                steps.append(StepDefinition(
+                    step_id="step_1",
+                    step_order=1,
+                    title="Synthesize Goal Response",
+                    tool_name="document_synthesizer",
+                    tool_parameters={"title": "General Task Execution", "content": f"Execution plan for: {goal}"},
+                    dependencies=[],
+                    expected_output_type="CompiledDocument",
+                    rationale="Execute user goal using sandboxed synthesis."
+                ))
+            else:
+                steps.append(StepDefinition(
+                    step_id="step_1",
+                    step_order=1,
+                    title="Read-Only Literature Search",
+                    tool_name="web_search_arxiv",
+                    tool_parameters={"query": goal[:80], "max_results": 3},
+                    dependencies=[],
+                    expected_output_type="PaperMetadataList",
+                    rationale="Conduct non-mutating information lookup respecting read-only negative constraints."
+                ))
 
         return PlanDAG(
             goal=goal,

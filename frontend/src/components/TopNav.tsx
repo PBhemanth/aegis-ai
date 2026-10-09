@@ -9,8 +9,6 @@ import {
   Search,
   BarChart3,
   Play,
-  Sun,
-  User,
 } from 'lucide-react';
 import { GoogleAuthStatus } from '../types';
 
@@ -64,7 +62,7 @@ export const TopNav: React.FC<TopNavProps> = ({
     },
     {
       id: 'runs' as NavTabId,
-      label: 'Agent Runs',
+      label: 'Telemetry',
       icon: Activity,
       iconColor: 'text-pink-400',
     },
@@ -76,37 +74,38 @@ export const TopNav: React.FC<TopNavProps> = ({
     },
     {
       id: 'calendar' as NavTabId,
-      label: 'Calendar',
+      label: googleStatus?.authenticated ? 'Google Services' : 'Google (OAuth)',
       icon: Calendar,
       iconColor: 'text-cyan-400',
+      badge: !googleStatus?.authenticated ? 'Unconfigured' : undefined,
     },
     {
       id: 'research' as NavTabId,
-      label: 'Research',
+      label: 'arXiv Research',
       icon: Search,
       iconColor: 'text-sky-400',
     },
     {
       id: 'analytics' as NavTabId,
-      label: 'Analytics',
+      label: 'Audit Ledger',
       icon: BarChart3,
       iconColor: 'text-purple-400',
     },
   ];
 
   return (
-    <header className="sticky top-0 z-40 bg-[#060a14]/90 backdrop-blur-md border-b border-slate-800/80 px-4 lg:px-7 py-3">
-      <div className="max-w-[1720px] mx-auto flex items-center justify-between gap-4">
+    <header className="sticky top-0 z-40 bg-[#060a14]/95 backdrop-blur-md border-b border-slate-800/80 px-4 lg:px-7 py-2.5">
+      <div className="max-w-[1720px] mx-auto flex items-center justify-between gap-3 sm:gap-4">
         {/* Left: Brand Logo & Title */}
         <div
-          className="flex items-center gap-3 cursor-pointer shrink-0"
+          className="flex items-center gap-2.5 cursor-pointer shrink-0"
           onClick={() => onSelectTab('dashboard')}
           title="CampusPilot Dashboard"
         >
-          {/* Glowing Delta / Compass Mark */}
+          {/* Delta Brand Mark */}
           <div className="relative flex items-center justify-center">
             <svg
-              className="w-8 h-8 filter drop-shadow-[0_0_8px_rgba(0,242,254,0.6)]"
+              className="w-7 h-7 sm:w-8 sm:h-8"
               viewBox="0 0 32 32"
               fill="none"
               xmlns="http://www.w3.org/2000/svg"
@@ -136,16 +135,19 @@ export const TopNav: React.FC<TopNavProps> = ({
             </svg>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="text-lg lg:text-xl font-bold tracking-tight text-white font-sans">
+          <div className="flex flex-col">
+            <span className="text-base sm:text-lg font-bold tracking-tight text-white font-sans leading-none">
               CampusPilot
+            </span>
+            <span className="text-[10px] text-cyan-400 font-mono hidden sm:inline leading-tight mt-0.5">
+              Aegis AI Runtime
             </span>
           </div>
         </div>
 
-        {/* Center: Navigation Pills */}
+        {/* Center: Navigation Tabs (Desktop) */}
         <nav
-          className="hidden md:flex items-center gap-1 overflow-x-auto py-0.5 no-scrollbar"
+          className="hidden lg:flex items-center gap-1 overflow-x-auto py-0.5 no-scrollbar"
           aria-label="Main Navigation"
         >
           {tabs.map((tab) => {
@@ -157,9 +159,9 @@ export const TopNav: React.FC<TopNavProps> = ({
                 key={tab.id}
                 type="button"
                 onClick={() => onSelectTab(tab.id)}
-                className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap ${
+                className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap cursor-pointer ${
                   isActive
-                    ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-lg shadow-indigo-500/25 ring-1 ring-indigo-400/30'
+                    ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-indigo-500/25 ring-1 ring-indigo-400/30'
                     : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
                 }`}
                 aria-current={isActive ? 'page' : undefined}
@@ -171,64 +173,51 @@ export const TopNav: React.FC<TopNavProps> = ({
                   aria-hidden="true"
                 />
                 <span>{tab.label}</span>
+                {tab.badge && (
+                  <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-amber-950/70 text-amber-300 border border-amber-800/60">
+                    {tab.badge}
+                  </span>
+                )}
               </button>
             );
           })}
         </nav>
 
-        {/* Right Actions: Status Pill, Run Button, Theme Toggle, User Avatar */}
-        <div className="flex items-center gap-2.5 shrink-0">
+        {/* Right Actions: System Status & Primary Action */}
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
           {/* Live System Status Pill */}
           <div
-            className="hidden xl:flex items-center gap-2 px-2.5 py-1 rounded-xl bg-slate-900/80 border border-slate-800 text-[11px] font-mono text-slate-300"
+            className="flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-slate-900/90 border border-slate-800 text-[11px] font-mono text-slate-300"
             title={`Backend: ${backendOnline ? 'Online' : 'Offline'} | Google: ${
-              googleStatus?.authenticated ? 'OAuth Active' : 'Unauthenticated'
+              googleStatus?.authenticated ? 'Connected' : 'OAuth Required'
             }`}
           >
             <span
               className={`w-2 h-2 rounded-full ${
-                backendOnline ? 'bg-emerald-400 animate-pulse' : 'bg-rose-500'
+                backendOnline ? 'bg-emerald-400' : 'bg-rose-500'
               }`}
             />
-            <span className="font-semibold text-slate-300 uppercase">{agentState}</span>
+            <span className="font-semibold uppercase text-[10px] sm:text-[11px]">
+              {agentState}
+            </span>
           </div>
 
-          {/* Prominent Green Run Button */}
+          {/* Primary Quick Run Button */}
           <button
             type="button"
             onClick={onQuickRun}
             disabled={isLoading}
-            className="flex items-center gap-2 bg-[#10b981] hover:bg-[#059669] active:scale-95 text-slate-950 font-bold px-4 py-1.5 rounded-xl text-xs shadow-lg shadow-emerald-500/25 transition-all"
-            title="Execute goal"
+            className="flex items-center gap-1.5 bg-[#10b981] hover:bg-[#059669] active:scale-95 text-slate-950 font-bold px-3.5 py-1.5 rounded-xl text-xs shadow-md shadow-emerald-500/20 transition-all cursor-pointer disabled:opacity-50"
+            title="Execute current mission or default research goal"
           >
             <Play className="h-3 w-3 fill-current text-slate-950" />
-            <span>Run</span>
-          </button>
-
-          {/* Theme Toggle Icon Button */}
-          <button
-            type="button"
-            className="h-8 w-8 rounded-full bg-slate-900/80 border border-slate-800 hover:border-slate-700 flex items-center justify-center text-slate-400 hover:text-slate-200 transition-colors"
-            title="Theme: Dark Mode Active"
-            aria-label="Toggle theme"
-          >
-            <Sun className="h-3.5 w-3.5 text-slate-300" />
-          </button>
-
-          {/* User Profile Avatar */}
-          <button
-            type="button"
-            className="h-8 w-8 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-600 border border-indigo-400/50 flex items-center justify-center text-white shadow-md shadow-purple-500/20"
-            title="Agent Profile / Student"
-            aria-label="User profile"
-          >
-            <User className="h-4 w-4 text-white" />
+            <span className="font-semibold">Run</span>
           </button>
         </div>
       </div>
 
       {/* Mobile Horizontal Sub-Navigation */}
-      <div className="flex md:hidden items-center gap-1 overflow-x-auto pt-2.5 pb-0.5 no-scrollbar border-t border-slate-800/60 mt-2">
+      <div className="flex lg:hidden items-center gap-1 overflow-x-auto pt-2 pb-0.5 no-scrollbar border-t border-slate-800/60 mt-2">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
@@ -237,7 +226,7 @@ export const TopNav: React.FC<TopNavProps> = ({
               key={tab.id}
               type="button"
               onClick={() => onSelectTab(tab.id)}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold whitespace-nowrap ${
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold whitespace-nowrap cursor-pointer ${
                 isActive
                   ? 'bg-blue-600 text-white shadow-sm'
                   : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'

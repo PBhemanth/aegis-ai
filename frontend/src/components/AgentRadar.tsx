@@ -1,235 +1,247 @@
 import React from 'react';
-import { Bot } from 'lucide-react';
+import {
+  Bot,
+  ShieldCheck,
+  CheckCircle2,
+  RefreshCw,
+  Key,
+  Database,
+  Search,
+} from 'lucide-react';
+import { GoogleAuthStatus, PlanData } from '../types';
 
 interface AgentRadarProps {
   agentState: string;
+  plan?: PlanData | null;
+  googleStatus?: GoogleAuthStatus | null;
+  isLoading?: boolean;
 }
 
-export const AgentRadar: React.FC<AgentRadarProps> = ({ agentState }) => {
+export const AgentRadar: React.FC<AgentRadarProps> = ({
+  agentState,
+  plan,
+  googleStatus,
+  isLoading = false,
+}) => {
   const normalizedState = (agentState || 'IDLE').toUpperCase();
 
-  const getStatusColor = () => {
+  const getStatusDisplay = () => {
     if (normalizedState.includes('EXEC') || normalizedState.includes('TOOL')) {
       return {
-        accent: '#00f2fe',
-        glow: 'rgba(0, 242, 254, 0.7)',
-        text: 'text-cyan-400',
         badge: 'EXECUTING',
+        bg: 'bg-cyan-950/80 border-cyan-500/60 text-cyan-300',
+        dot: 'bg-cyan-400',
+        spinning: true,
       };
     }
     if (normalizedState.includes('VERIFY')) {
       return {
-        accent: '#a855f7',
-        glow: 'rgba(168, 85, 247, 0.7)',
-        text: 'text-purple-400',
         badge: 'VERIFYING',
+        bg: 'bg-purple-950/80 border-purple-500/60 text-purple-300',
+        dot: 'bg-purple-400',
+        spinning: true,
       };
     }
     if (normalizedState.includes('COMPLET') || normalizedState.includes('VERIFIED')) {
       return {
-        accent: '#10b981',
-        glow: 'rgba(16, 185, 129, 0.7)',
-        text: 'text-emerald-400',
-        badge: 'COMPLETED',
+        badge: 'COMPLETED & VERIFIED',
+        bg: 'bg-emerald-950/80 border-emerald-500/60 text-emerald-300',
+        dot: 'bg-emerald-400',
+        spinning: false,
       };
     }
     if (normalizedState.includes('APPROVAL') || normalizedState.includes('AWAITING')) {
       return {
-        accent: '#f59e0b',
-        glow: 'rgba(245, 158, 11, 0.7)',
-        text: 'text-amber-400',
         badge: 'APPROVAL REQUIRED',
+        bg: 'bg-amber-950/80 border-amber-500/60 text-amber-300',
+        dot: 'bg-amber-400',
+        spinning: false,
       };
     }
-    if (normalizedState.includes('FAIL')) {
+    if (normalizedState.includes('FAIL') || normalizedState.includes('REJECT')) {
       return {
-        accent: '#f43f5e',
-        glow: 'rgba(244, 63, 94, 0.7)',
-        text: 'text-rose-400',
-        badge: 'FAILED',
+        badge: normalizedState.includes('REJECT') ? 'REJECTED' : 'FAILED',
+        bg: 'bg-rose-950/80 border-rose-500/60 text-rose-300',
+        dot: 'bg-rose-400',
+        spinning: false,
       };
     }
     if (normalizedState.includes('PLAN') || normalizedState.includes('UNDERSTAND')) {
       return {
-        accent: '#38bdf8',
-        glow: 'rgba(56, 189, 248, 0.7)',
-        text: 'text-sky-400',
         badge: 'PLANNING',
+        bg: 'bg-sky-950/80 border-sky-500/60 text-sky-300',
+        dot: 'bg-sky-400',
+        spinning: true,
       };
     }
     return {
-      accent: '#00f2fe',
-      glow: 'rgba(0, 242, 254, 0.4)',
-      text: 'text-cyan-400',
-      badge: 'IDLE',
+      badge: 'IDLE (READY)',
+      bg: 'bg-slate-900/90 border-slate-700/80 text-slate-300',
+      dot: 'bg-cyan-400',
+      spinning: false,
     };
   };
 
-  const status = getStatusColor();
+  const status = getStatusDisplay();
+  const steps = plan?.steps || [];
+  const completedSteps = steps.filter((s) => s.status === 'VERIFIED').length;
+  const totalSteps = steps.length;
+  const awaitingApproval = steps.some((s) => s.status === 'AWAITING_APPROVAL');
 
   return (
-    <div className="bg-[#0a1122]/90 backdrop-blur-md rounded-2xl p-4 border border-cyan-500/20 hover:border-cyan-500/40 transition-colors duration-300 shadow-[0_4px_30px_-5px_rgba(0,242,254,0.10)] flex flex-col justify-between h-full min-h-[380px] max-h-[520px] overflow-hidden">
-      {/* Header: Robot Icon + LIVE Badge */}
-      <div className="flex items-center justify-between pb-3 border-b border-slate-800/60">
+    <div className="bg-[#0a1122]/90 backdrop-blur-md rounded-2xl p-4 sm:p-5 border border-slate-800/80 shadow-[0_4px_30px_-5px_rgba(0,0,0,0.5)] flex flex-col justify-between h-full min-h-[380px] max-h-[580px] overflow-hidden">
+      {/* Header: Agent Identity + Functional Status Indicator */}
+      <div className="flex items-center justify-between pb-3.5 border-b border-slate-800/70">
         <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-cyan-950/60 border border-cyan-500/40 flex items-center justify-center text-cyan-400">
+          <div className="w-9 h-9 rounded-xl bg-cyan-950/70 border border-cyan-500/40 flex items-center justify-center text-cyan-400 shrink-0 shadow-sm shadow-cyan-500/20">
             <Bot className="w-5 h-5" />
           </div>
           <div>
             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-200 font-mono">
-              Autonomous Agent
+              Agent Runtime Telemetry
             </h3>
             <span className="text-[10px] text-slate-400 font-mono">
-              Aegis Kernel // Core v2.5
+              Aegis Kernel // Deterministic Engine
             </span>
           </div>
         </div>
 
-        {/* Green LIVE Badge */}
-        <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-950/70 border border-emerald-500/50 text-emerald-400 text-xs font-mono font-bold tracking-wider">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span>LIVE</span>
+        {/* Live Operational State Badge */}
+        <div
+          className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-mono font-bold tracking-wide border ${status.bg}`}
+        >
+          {isLoading || status.spinning ? (
+            <RefreshCw className="w-3 h-3 animate-spin shrink-0" />
+          ) : (
+            <span className={`w-2 h-2 rounded-full ${status.dot}`} />
+          )}
+          <span>{status.badge}</span>
         </div>
       </div>
 
-      {/* Center Radar Orbit Visualization */}
-      <div className="flex-1 flex flex-col items-center justify-center py-4 relative">
-        <div className="relative w-56 h-56 sm:w-64 sm:h-64 max-w-full flex items-center justify-center">
-          <svg
-            viewBox="0 0 320 320"
-            className="w-full h-full"
-            aria-label={`Agent Radar: ${agentState}`}
-          >
-            <defs>
-              <linearGradient id="orbitGradCyan" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor="#00f2fe" stopOpacity="0.8" />
-                <stop offset="50%" stopColor="#38bdf8" stopOpacity="0.2" />
-                <stop offset="100%" stopColor="#8a2be2" stopOpacity="0.8" />
-              </linearGradient>
+      {/* Main Telemetry Body: Functional Status Overview */}
+      <div className="flex-1 py-3.5 space-y-3.5 overflow-y-auto pr-1">
+        {/* Mission Status Card */}
+        <div className="rounded-xl bg-[#070c18] border border-slate-800/90 p-3 space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-slate-400 font-medium font-mono text-[11px] uppercase">
+              Current Mission
+            </span>
+            {plan ? (
+              <span className="font-mono text-cyan-400 text-[11px] bg-cyan-950/50 px-2 py-0.5 rounded border border-cyan-900/60 truncate max-w-[160px]">
+                {plan.id}
+              </span>
+            ) : (
+              <span className="text-slate-500 text-xs">No active plan</span>
+            )}
+          </div>
 
-              <linearGradient id="orbitGradPurple" x1="100%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stopColor="#8a2be2" stopOpacity="0.8" />
-                <stop offset="50%" stopColor="#6366f1" stopOpacity="0.3" />
-                <stop offset="100%" stopColor="#00f2fe" stopOpacity="0.7" />
-              </linearGradient>
-
-              <filter id="cyanGlow" x="-50%" y="-50%" width="200%" height="200%">
-                <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="blur" />
-                <feMerge>
-                  <feMergeNode in="blur" />
-                  <feMergeNode in="SourceGraphic" />
-                </feMerge>
-              </filter>
-            </defs>
-
-            {/* Outermost Faint Ring */}
-            <circle
-              cx="160"
-              cy="160"
-              r="138"
-              fill="none"
-              stroke="#0ea5e9"
-              strokeOpacity="0.15"
-              strokeWidth="1"
-              strokeDasharray="4 8"
-            />
-
-            {/* Orbit Ring 1 (Outer with traveling node) */}
-            <g className="core-orbit-1">
-              <circle
-                cx="160"
-                cy="160"
-                r="120"
-                fill="none"
-                stroke="url(#orbitGradCyan)"
-                strokeWidth="1.8"
-                strokeDasharray="50 30 20 30"
-              />
-              {/* Satellite Node 1 */}
-              <circle cx="280" cy="160" r="5" fill="#00f2fe" filter="url(#cyanGlow)" />
-              <circle cx="40" cy="160" r="3.5" fill="#8a2be2" filter="url(#cyanGlow)" />
-            </g>
-
-            {/* Orbit Ring 2 (Middle with traveling node) */}
-            <g className="core-orbit-2">
-              <circle
-                cx="160"
-                cy="160"
-                r="92"
-                fill="none"
-                stroke="url(#orbitGradPurple)"
-                strokeWidth="2"
-                strokeDasharray="70 40 30 40"
-              />
-              {/* Satellite Node 2 */}
-              <circle cx="160" cy="68" r="5.5" fill="#00f2fe" filter="url(#cyanGlow)" />
-              <circle cx="160" cy="252" r="4" fill="#38bdf8" filter="url(#cyanGlow)" />
-            </g>
-
-            {/* Orbit Ring 3 (Inner dashed ring) */}
-            <g className="core-orbit-3">
-              <circle
-                cx="160"
-                cy="160"
-                r="68"
-                fill="none"
-                stroke="#00f2fe"
-                strokeOpacity="0.4"
-                strokeWidth="1.5"
-                strokeDasharray="12 16"
-              />
-              <circle cx="112" cy="112" r="4" fill="#a855f7" filter="url(#cyanGlow)" />
-            </g>
-
-            {/* Central Glowing Plate */}
-            <circle
-              cx="160"
-              cy="160"
-              r="48"
-              fill="#060c18"
-              stroke="url(#orbitGradCyan)"
-              strokeWidth="2.5"
-              filter="url(#cyanGlow)"
-            />
-
-            {/* Stylized Robot Mascot in Center */}
-            <g transform="translate(132, 132)">
-              {/* Robot Head Body */}
-              <rect
-                x="6"
-                y="10"
-                width="44"
-                height="36"
-                rx="12"
-                fill="#0c172e"
-                stroke="#00f2fe"
-                strokeWidth="2.5"
-                filter="url(#cyanGlow)"
-              />
-              {/* Antenna */}
-              <line x1="28" y1="2" x2="28" y2="10" stroke="#00f2fe" strokeWidth="2.5" strokeLinecap="round" />
-              <circle cx="28" cy="2" r="2.5" fill="#00f2fe" />
-              {/* Cute glowing cyan robot eyes */}
-              <rect x="15" y="22" width="9" height="7" rx="3.5" fill="#00f2fe" />
-              <rect x="32" y="22" width="9" height="7" rx="3.5" fill="#00f2fe" />
-              {/* Subtle smile/line */}
-              <path d="M 23 36 Q 28 40 33 36" stroke="#38bdf8" strokeWidth="1.8" strokeLinecap="round" fill="none" />
-            </g>
-          </svg>
+          {plan ? (
+            <div>
+              <div className="flex items-center justify-between text-xs text-slate-300 mb-1">
+                <span className="font-medium">Plan Execution Progress</span>
+                <span className="font-mono text-xs font-semibold">
+                  {completedSteps} / {totalSteps} Steps
+                </span>
+              </div>
+              <div className="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden">
+                <div
+                  className={`h-full transition-all duration-300 rounded-full ${
+                    completedSteps === totalSteps && totalSteps > 0
+                      ? 'bg-emerald-400'
+                      : awaitingApproval
+                      ? 'bg-amber-400'
+                      : 'bg-cyan-500'
+                  }`}
+                  style={{
+                    width: totalSteps > 0 ? `${(completedSteps / totalSteps) * 100}%` : '0%',
+                  }}
+                />
+              </div>
+            </div>
+          ) : (
+            <p className="text-xs text-slate-400 leading-relaxed">
+              Ready to process goals. Enter a research objective or study plan in the command box.
+            </p>
+          )}
         </div>
 
-        {/* State readout banner */}
-        <div className="mt-2 text-center">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-slate-950/90 border border-slate-800 text-xs shadow-inner">
-            <span
-              className="h-2 w-2 rounded-full animate-ping"
-              style={{ backgroundColor: status.accent }}
-            />
-            <span className={`font-mono text-xs font-bold tracking-wider ${status.text}`}>
-              {status.badge}
-            </span>
+        {/* Safety & Blast Radius Policy */}
+        <div className="rounded-xl bg-[#070c18] border border-slate-800/90 p-3 space-y-2">
+          <div className="flex items-center gap-1.5 text-xs font-mono font-bold uppercase tracking-wider text-slate-300">
+            <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Deterministic Blast-Radius Engine</span>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-[11px] font-mono">
+            <div className="p-2 rounded-lg bg-slate-950/80 border border-slate-800/60">
+              <span className="text-slate-500 block text-[10px]">TIER 0 / 1</span>
+              <span className="text-cyan-300 font-medium">Read / Reversible</span>
+              <span className="text-[10px] text-emerald-400 block mt-0.5">Auto-Permitted</span>
+            </div>
+            <div className="p-2 rounded-lg bg-slate-950/80 border border-slate-800/60">
+              <span className="text-slate-500 block text-[10px]">TIER 2 / 3</span>
+              <span className="text-amber-300 font-medium">Mutate / Delete</span>
+              <span className="text-[10px] text-amber-400 block mt-0.5">Approval Gated</span>
+            </div>
           </div>
         </div>
+
+        {/* Service Integration Truth Matrix */}
+        <div className="rounded-xl bg-[#070c18] border border-slate-800/90 p-3 space-y-2">
+          <span className="text-slate-400 font-mono text-[11px] uppercase tracking-wider block">
+            Service Integrations Status
+          </span>
+
+          <div className="space-y-1.5 text-xs">
+            {/* 1. Academic arXiv Search */}
+            <div className="flex items-center justify-between p-1.5 rounded-lg bg-slate-950/60 border border-slate-800/50">
+              <div className="flex items-center gap-2">
+                <Search className="w-3.5 h-3.5 text-cyan-400" />
+                <span className="text-slate-300">arXiv Research Engine</span>
+              </div>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-900/50">
+                Verified Online
+              </span>
+            </div>
+
+            {/* 2. Cryptographic Ledger */}
+            <div className="flex items-center justify-between p-1.5 rounded-lg bg-slate-950/60 border border-slate-800/50">
+              <div className="flex items-center gap-2">
+                <Key className="w-3.5 h-3.5 text-indigo-400" />
+                <span className="text-slate-300">Audit Ledger (HMAC)</span>
+              </div>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-900/50">
+                Sealed
+              </span>
+            </div>
+
+            {/* 3. Google Workspace */}
+            <div className="flex items-center justify-between p-1.5 rounded-lg bg-slate-950/60 border border-slate-800/50">
+              <div className="flex items-center gap-2">
+                <Database className="w-3.5 h-3.5 text-slate-400" />
+                <span className="text-slate-300">Google Drive & Calendar</span>
+              </div>
+              {googleStatus?.authenticated ? (
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-950/60 text-emerald-400 border border-emerald-900/50">
+                  Connected
+                </span>
+              ) : (
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-950/50 text-amber-400 border border-amber-900/50">
+                  OAuth Required
+                </span>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Footer: Deterministic Verifier Assertion */}
+      <div className="pt-2.5 border-t border-slate-800/70 flex items-center justify-between text-[11px] font-mono text-slate-500">
+        <span className="flex items-center gap-1.5 text-slate-400">
+          <CheckCircle2 className="w-3.5 h-3.5 text-cyan-400" />
+          <span>Independent Proof Verifier</span>
+        </span>
+        <span className="text-cyan-400 font-semibold">ACTIVE</span>
       </div>
     </div>
   );

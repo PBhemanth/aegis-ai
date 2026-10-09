@@ -50,7 +50,9 @@ async def execute_and_verify_step(
             detail=f"Step '{step_id}' does not exist."
         )
 
-    creds = await google_auth_service.get_credentials(user_id=user_id, db=db)
+    creds = None
+    if step.tool_name.startswith(("google_drive_", "google_calendar_")):
+        creds = await google_auth_service.get_credentials(user_id=user_id, db=db)
     context = ExecutionContext(user_id=user_id, credentials=creds)
 
     req = payload or StepExecutionRequest()

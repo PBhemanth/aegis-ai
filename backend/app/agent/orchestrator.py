@@ -5,7 +5,7 @@ and RecoveryEngine while enforcing strict state machine and audit contracts.
 """
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -27,7 +27,7 @@ class PlanExecutionSummary(BaseModel):
     steps_verified: int
     current_step_id: Optional[str] = None
     halt_reason: Optional[str] = None
-    receipts: List[ExecutionReceipt] = []
+    receipts: List[ExecutionReceipt] = Field(default_factory=list)
 
 
 class AgentOrchestrator:
@@ -58,8 +58,17 @@ class AgentOrchestrator:
             plan.status = PlanStatus.RUNNING.value
             await db.commit()
 
-        # Load Google OAuth Credentials if available
-        creds = await google_auth_service.get_credentials(user_id=user_id, db=db)
+        # Avoid a database lookup (and possible token refresh) for plans that do
+        # not use Google Workspace tools.
+        needs_google_credentials = any(
+            step.tool_name.startswith(("google_drive_", "google_calendar_"))
+            for step in plan.steps
+        )
+        creds = (
+            await google_auth_service.get_credentials(user_id=user_id, db=db)
+            if needs_google_credentials
+            else None
+        )
         context = ExecutionContext(user_id=user_id, credentials=creds)
 
         receipts: List[ExecutionReceipt] = []
@@ -69,6 +78,20 @@ class AgentOrchestrator:
             if step.status == StepStatus.VERIFIED.value:
                 steps_verified += 1
                 continue
+
+            # Check if step has been rejected by operator
+            if step.status == StepStatus.REJECTED.value:
+                plan.status = PlanStatus.HALTED.value
+                await db.commit()
+                return PlanExecutionSummary(
+                    plan_id=plan.id,
+                    status=PlanStatus.HALTED.value,
+                    steps_total=len(plan.steps),
+                    steps_verified=steps_verified,
+                    current_step_id=step.id,
+                    halt_reason=f"Step '{step.title}' was rejected by user and cannot be executed.",
+                    receipts=receipts
+                )
 
             # Check if step is awaiting approval or requires approval
             if step.status == StepStatus.AWAITING_APPROVAL.value and not (approval_nonce and action_fingerprint):

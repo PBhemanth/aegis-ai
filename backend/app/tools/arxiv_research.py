@@ -73,18 +73,23 @@ class ArxivResearchTool(BaseTool):
                 response = await client.get(self.ARXIV_API_URL, params=query_params)
                 if response.status_code != 200:
                     raise ToolExecutionError(
-                        f"arXiv API returned HTTP status {response.status_code}",
+                        f"arXiv public API returned HTTP status {response.status_code} for query '{params.query}'.",
                         tool_name=self.name
                     )
                 xml_text = response.text
         except httpx.RequestError as e:
-            # Fallback for network timeouts or offline environments
-            return self._fallback_sample_papers(params.query, params.max_results)
+            raise ToolExecutionError(
+                f"arXiv public API is unreachable or request timed out ({str(e)}). No fabricated papers returned.",
+                tool_name=self.name
+            )
 
         try:
             return self._parse_arxiv_feed(xml_text, params.query)
         except Exception as e:
-            return self._fallback_sample_papers(params.query, params.max_results)
+            raise ToolExecutionError(
+                f"Failed to parse arXiv Atom XML response feed ({str(e)}).",
+                tool_name=self.name
+            )
 
     def _parse_arxiv_feed(self, xml_text: str, query: str) -> ArxivSearchResult:
         """Parses Atom XML returned by arXiv."""
@@ -141,40 +146,6 @@ class ArxivResearchTool(BaseTool):
             total_found=len(papers),
             papers=papers
         )
-
-    def _fallback_sample_papers(self, query: str, max_results: int) -> ArxivSearchResult:
-        """Deterministic fallback when offline or arXiv endpoint is unreachable."""
-        sample_papers = [
-            PaperMetadata(
-                arxiv_id="2305.18290",
-                title="Graph Neural Networks in Cryptocurrency Forensics: A Comprehensive Survey",
-                authors=["L. Zhang", "M. Weber", "D. Chen"],
-                published="2023-05-29T14:22:10Z",
-                summary="We review recent advancements in topological Graph Neural Network architectures for illicit Bitcoin transaction detection, focusing on dynamic graph convolutions and address clustering.",
-                pdf_url="https://arxiv.org/pdf/2305.18290.pdf",
-                primary_category="cs.CR"
-            ),
-            PaperMetadata(
-                arxiv_id="2210.04561",
-                title="Temporal-Relational GNNs for Real-Time Blockchain Anomaly Detection",
-                authors=["K. Patel", "J. Zhao", "S. Kumar"],
-                published="2022-10-10T09:15:30Z",
-                summary="Proposes an edge-attributed temporal graph attention network that detects smart contract rug-pulls and money laundering with sub-second inference latency.",
-                pdf_url="https://arxiv.org/pdf/2210.04561.pdf",
-                primary_category="cs.LG"
-            ),
-            PaperMetadata(
-                arxiv_id="2401.09842",
-                title="Heterogeneous Graph Embeddings for Ethereum Phishing Identification",
-                authors=["Y. Liu", "A. Wang", "R. Gomez"],
-                published="2024-01-18T18:40:02Z",
-                summary="Constructs heterogeneous transaction-interaction graphs over Ethereum transaction logs to uncover organized phishing syndicates with 96.4% recall.",
-                pdf_url="https://arxiv.org/pdf/2401.09842.pdf",
-                primary_category="cs.SI"
-            )
-        ]
-        selected = sample_papers[:max_results]
-        return ArxivSearchResult(query=query, total_found=len(selected), papers=selected)
 
 
 arxiv_tool = ArxivResearchTool()

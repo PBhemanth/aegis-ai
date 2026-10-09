@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import {
   ClipboardList,
-  SlidersHorizontal,
   CheckCircle2,
   Clock,
   Search,
@@ -130,72 +129,56 @@ export const TasksPanel: React.FC<TasksPanelProps> = ({
         </div>
 
         {/* View Mode / Filter Toggle */}
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() =>
-              setFilterMode((prev) =>
-                prev === 'all' ? 'pending' : prev === 'pending' ? 'verified' : 'all'
-              )
-            }
-            className="w-8 h-8 rounded-xl bg-slate-900/80 border border-slate-800 hover:border-slate-700 flex items-center justify-center text-slate-400 hover:text-slate-200 transition-colors"
-            title={`Current Filter: ${filterMode.toUpperCase()} (Click to toggle)`}
-            aria-label="Filter tasks"
-          >
-            <SlidersHorizontal className="w-4 h-4" />
-          </button>
+        <div className="inline-flex items-center gap-1 bg-slate-900/90 p-0.5 rounded-lg border border-slate-800 text-[11px]">
+          {(['all', 'pending', 'verified'] as const).map((mode) => (
+            <button
+              key={mode}
+              type="button"
+              onClick={() => setFilterMode(mode)}
+              className={`px-2 py-0.5 rounded-md font-medium capitalize transition-all cursor-pointer ${
+                filterMode === mode
+                  ? 'bg-slate-800 text-cyan-300 font-semibold'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {mode}
+            </button>
+          ))}
         </div>
       </div>
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col justify-center py-4">
         {!hasSteps ? (
-          /* Empty State Illustration matching Reference Image */
+          /* Empty State Illustration */
           <div className="flex flex-col items-center justify-center py-8 text-center">
-            {/* Glowing Neon Rounded Check Card Illustration */}
-            <div className="relative w-28 h-28 flex items-center justify-center mb-3">
-              {/* Radiating Accent Lines */}
-              <div className="absolute -left-3 top-8 w-3 h-0.5 bg-cyan-400/60 rounded-full" />
-              <div className="absolute -left-2 bottom-8 w-3 h-0.5 bg-cyan-400/40 rounded-full rotate-12" />
-              <div className="absolute -right-3 top-8 w-3 h-0.5 bg-cyan-400/60 rounded-full" />
-              <div className="absolute -right-2 bottom-8 w-3 h-0.5 bg-cyan-400/40 rounded-full -rotate-12" />
-
-              {/* Glowing Card Box */}
-              <div className="w-16 h-20 rounded-2xl bg-[#0b1428] border-2 border-cyan-400/70 shadow-[0_0_25px_rgba(0,242,254,0.35)] flex items-center justify-center relative">
-                {/* Checkmark inside */}
-                <svg
-                  className="w-7 h-7 text-cyan-300 filter drop-shadow-[0_0_6px_rgba(0,242,254,0.8)]"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-              </div>
+            <div className="w-14 h-14 rounded-2xl bg-[#0b1428] border border-cyan-500/30 flex items-center justify-center mb-3 text-cyan-400 shadow-md shadow-cyan-500/10">
+              <ClipboardList className="w-7 h-7" />
             </div>
+            <h4 className="text-sm font-bold text-slate-200 mb-1">No Active Mission Plan</h4>
+            <p className="text-xs text-slate-400 max-w-xs mb-4">
+              Enter a goal in the prompt box above or select a preset workflow to synthesize a verified plan DAG.
+            </p>
 
-            <div className="flex flex-wrap items-center justify-center gap-2 mt-2">
+            <div className="flex flex-wrap items-center justify-center gap-2">
               <button
                 type="button"
                 onClick={() => onLaunchPreset?.('gnn')}
-                className="px-3 py-1.5 rounded-xl bg-[#0c1833] border border-cyan-500/40 hover:border-cyan-400 text-cyan-300 text-xs font-semibold shadow-sm transition-all"
+                className="px-3 py-1.5 rounded-xl bg-[#0c1833] border border-cyan-500/40 hover:border-cyan-400 text-cyan-300 text-xs font-semibold shadow-sm transition-all cursor-pointer"
               >
                 ✦ GNN Research
               </button>
               <button
                 type="button"
                 onClick={() => onLaunchPreset?.('study')}
-                className="px-3 py-1.5 rounded-xl bg-indigo-950/60 border border-indigo-500/40 hover:border-indigo-400 text-indigo-300 text-xs font-semibold shadow-sm transition-all"
+                className="px-3 py-1.5 rounded-xl bg-indigo-950/60 border border-indigo-500/40 hover:border-indigo-400 text-indigo-300 text-xs font-semibold shadow-sm transition-all cursor-pointer"
               >
                 📅 ML Study Plan
               </button>
               <button
                 type="button"
                 onClick={() => onLaunchPreset?.('gate')}
-                className="px-3 py-1.5 rounded-xl bg-amber-950/60 border border-amber-500/40 hover:border-amber-400 text-amber-300 text-xs font-semibold shadow-sm transition-all"
+                className="px-3 py-1.5 rounded-xl bg-amber-950/60 border border-amber-500/40 hover:border-amber-400 text-amber-300 text-xs font-semibold shadow-sm transition-all cursor-pointer"
               >
                 🔒 Safety Gate
               </button>

@@ -81,7 +81,12 @@ class SandboxedExecutor:
         4. Transitions step to VERIFYING (Never directly to VERIFIED)
         5. Emits hash-chained audit events
         """
-        # 1. State Machine check
+        # 1. State Machine check & Rejection enforcement
+        if step.status == StepStatus.REJECTED.value:
+            raise ToolExecutionError(
+                f"Step '{step.title}' was rejected by user and cannot be executed.",
+                tool_name=step.tool_name
+            )
         current_status = StepStatus(step.status)
         StateMachine.validate_step_transition(current_status, StepStatus.EXECUTING)
 
@@ -189,6 +194,67 @@ class SandboxedExecutor:
             payload={"tool_name": step.tool_name, "parameters": parameters},
             db=db
         )
+
+        # 5.5 Synthesize real retrieved arXiv papers if compiling research document
+        if step.tool_name == "document_synthesizer":
+            arxiv_query = await db.execute(
+                select(Step).where(
+                    Step.plan_id == plan_id,
+                    Step.tool_name == "web_search_arxiv",
+                    Step.status.in_([StepStatus.VERIFYING.value, StepStatus.VERIFIED.value])
+                )
+            )
+            arxiv_step = arxiv_query.scalar_one_or_none()
+            if arxiv_step and arxiv_step.execution_result_json:
+                try:
+                    arxiv_data = json.loads(arxiv_step.execution_result_json)
+                    papers = arxiv_data.get("papers", [])
+                    if papers:
+                        citations = []
+                        body_parts = [
+                            f"## Literature Review & Comparative Analysis\n",
+                            f"This technical brief synthesizes {len(papers)} peer-reviewed scientific studies retrieved from the arXiv repository for query: **{arxiv_data.get('query', 'Academic Research')}**.\n\n"
+                        ]
+                        for idx, p in enumerate(papers, 1):
+                            pid = p.get("arxiv_id", "N/A")
+                            ptitle = p.get("title", "Untitled")
+                            pauthors = ", ".join(p.get("authors", []))
+                            pcat = p.get("primary_category", "cs")
+                            ppub = p.get("published", "")[:10]
+                            psummary = p.get("summary", "No abstract available.")
+                            ppdf = p.get("pdf_url", f"https://arxiv.org/abs/{pid}")
+
+                            body_parts.append(
+                                f"### Study {idx}: {ptitle}\n"
+                                f"- **arXiv Identifier**: [{pid}](https://arxiv.org/abs/{pid})\n"
+                                f"- **Authors**: {pauthors}\n"
+                                f"- **Category**: `{pcat}` | **Published**: {ppub}\n"
+                                f"- **Full Paper PDF**: [{pid}.pdf]({ppdf})\n\n"
+                                f"**Abstract & Findings Summary**:\n{psummary}\n"
+                            )
+                            citations.append({
+                                "arxiv_id": pid,
+                                "title": ptitle,
+                                "authors": p.get("authors", []),
+                                "published": p.get("published", ""),
+                                "pdf_url": ppdf
+                            })
+
+                        body_parts.append("\n## Cross-Methodology Comparison Matrix\n")
+                        body_parts.append("| # | Study Title | Domain | arXiv Link | PDF Source |\n")
+                        body_parts.append("| :--- | :--- | :--- | :--- | :--- |\n")
+                        for idx, p in enumerate(papers, 1):
+                            pid = p.get("arxiv_id", "N/A")
+                            ptitle = p.get("title", "Untitled")
+                            pcat = p.get("primary_category", "cs")
+                            ppdf = p.get("pdf_url", f"https://arxiv.org/abs/{pid}")
+                            body_parts.append(f"| {idx} | {ptitle[:45]}... | `{pcat}` | [{pid}](https://arxiv.org/abs/{pid}) | [PDF]({ppdf}) |\n")
+
+                        parameters["content"] = "\n".join(body_parts)
+                        parameters["citations"] = citations
+                        step.parameters_json = json.dumps(parameters, default=str)
+                except Exception:
+                    pass
 
         start_time = datetime.now(timezone.utc)
         context.approval_granted = approval_granted

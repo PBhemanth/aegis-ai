@@ -75,3 +75,31 @@ async def test_dynamic_planning_halts_on_unsupported_capability_gap():
     assert result.capability_gap is not None
     assert "finance.trading" in result.capability_gap.missing_capabilities
     assert len(result.steps) == 0  # Zero hallucinated steps!
+
+
+@pytest.mark.asyncio
+async def test_dynamic_planning_respects_negative_constraints():
+    planner = DynamicPlanner()
+    goal = "Find 3 papers on GNNs, do not use Drive, do not use Calendar, and do not create, change, or delete files."
+    result = await planner.plan_goal(goal)
+
+    assert result.status == "SUCCESS"
+    tool_names = [s.tool_name for s in result.steps]
+    assert tool_names == ["web_search_arxiv"]
+    assert not any("drive" in t for t in tool_names)
+    assert not any("calendar" in t for t in tool_names)
+    assert not any("synthesizer" in t for t in tool_names)
+    assert not any("delete" in t for t in tool_names)
+
+
+@pytest.mark.asyncio
+async def test_dynamic_planning_does_not_add_unrelated_steps_for_mentioned_terms():
+    planner = DynamicPlanner()
+    goal = "Delete the outdated draft from Google Drive"
+    result = await planner.plan_goal(goal)
+
+    assert result.status == "SUCCESS"
+    tool_names = [s.tool_name for s in result.steps]
+    assert tool_names == ["google_drive_delete_file"]
+    assert "document_synthesizer" not in tool_names
+    assert "google_drive_upload_file" not in tool_names
