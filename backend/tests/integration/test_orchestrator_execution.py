@@ -134,3 +134,40 @@ async def test_single_step_execute_and_verify_endpoint(client: AsyncClient, db_s
     assert data["status"] == "VERIFIED"
     assert data["receipt"]["status"] == "EXECUTED"
     assert data["proof"]["status"] == "PASSED"
+
+
+@pytest.mark.asyncio
+async def test_orchestrator_executes_and_verifies_readonly_arxiv_research_plan(client: AsyncClient, db_session: AsyncSession):
+    # Tests the exact production flow: planning with negative constraints, execution, and ArxivPaperVerifier
+    user = User(id="user_arxiv_test", email="arxiv@aegis.local", display_name="Arxiv Test User")
+    db_session.add(user)
+    await db_session.commit()
+
+    goal = "Research 3 papers on GNN fraud detection with source links. Do not use Drive or Calendar, and do not create, change, or delete files"
+    gen_res = await client.post("/api/plan/generate", json={"goal": goal, "user_id": "user_arxiv_test"})
+    assert gen_res.status_code == 200
+    plan_id = gen_res.json()["plan_id"]
+
+    plan_res = await client.get(f"/api/plan/{plan_id}")
+    assert plan_res.status_code == 200
+    plan_data = plan_res.json()
+    assert len(plan_data["steps"]) == 1
+    assert plan_data["steps"][0]["tool_name"] == "web_search_arxiv"
+
+    # Execute plan end-to-end
+    exec_res = await client.post(f"/api/execute/plan/{plan_id}?user_id=user_arxiv_test")
+    assert exec_res.status_code == 200
+    summary = exec_res.json()
+    assert summary["status"] == "COMPLETED"
+    assert summary["steps_total"] == 1
+    assert summary["steps_verified"] == 1
+
+    # Verify proof was produced by ArxivPaperVerifier
+    step_id = plan_data["steps"][0]["id"]
+    proof_res = await client.get(f"/api/execute/proof/{step_id}")
+    assert proof_res.status_code == 200
+    proof = proof_res.json()
+    assert proof["status"] == "PASSED"
+    assert proof["verifier_name"] == "ArxivPaperVerifier"
+    assert all(a["passed"] for a in proof["assertions"])
+

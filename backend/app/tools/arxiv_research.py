@@ -53,15 +53,34 @@ class ArxivResearchTool(BaseTool):
 
     ARXIV_API_URL = "https://export.arxiv.org/api/query"
 
+    def _clean_search_query(self, raw_query: str) -> str:
+        """Sanitizes raw natural-language query to extract core academic literature terms."""
+        # Strip trailing meta-directives (e.g. "with source links", "with citations")
+        q = re.sub(
+            r'\b(?:with|including|having)\s+(?:source\s+links?|citations?|references?|sources?|links?|pdfs?|code)\b.*$',
+            '',
+            raw_query,
+            flags=re.IGNORECASE
+        ).strip()
+        # Strip leading conversational phrasing (e.g. "3 papers on", "recent papers about")
+        q = re.sub(
+            r'^(?:(?:find|search|research|identify|compare)\s+)?(?:(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s+)?(?:recent\s+)?(?:academic\s+)?papers?\s+(?:on|about)\s+',
+            '',
+            q,
+            flags=re.IGNORECASE
+        ).strip()
+        # Clean symbols and normalize spaces (do NOT use '+' join because httpx encodes '+' to '%2B')
+        cleaned = " ".join(re.sub(r"[^\w\s\-]", " ", q).split())
+        return cleaned or " ".join(re.sub(r"[^\w\s\-]", " ", raw_query).split())
+
     async def execute(self, params: ArxivSearchInput, context: ExecutionContext) -> ArxivSearchResult:
         """
         Executes query against the public arXiv REST API and parses Atom XML feed.
         """
-        clean_query = re.sub(r"[^\w\s\-]", " ", params.query).strip()
-        formatted_query = "+".join(clean_query.split())
+        clean_query = self._clean_search_query(params.query)
 
         query_params = {
-            "search_query": f"all:{formatted_query}",
+            "search_query": f"all:{clean_query}",
             "start": 0,
             "max_results": params.max_results,
             "sortBy": "relevance",
@@ -84,12 +103,32 @@ class ArxivResearchTool(BaseTool):
             )
 
         try:
-            return self._parse_arxiv_feed(xml_text, params.query)
+            result = self._parse_arxiv_feed(xml_text, params.query)
         except Exception as e:
             raise ToolExecutionError(
                 f"Failed to parse arXiv Atom XML response feed ({str(e)}).",
                 tool_name=self.name
             )
+
+        # Keyword relaxation fallback if initial multi-term search yielded 0 results
+        if result.total_found == 0 and len(clean_query.split()) > 2:
+            stop_words = {"in", "for", "of", "and", "the", "on", "a", "an", "to", "by", "with", "from", "at"}
+            core_terms = [w for w in clean_query.split() if w.lower() not in stop_words]
+            if len(core_terms) >= 2 and len(core_terms) < len(clean_query.split()):
+                relaxed_query = " ".join(core_terms[:4])
+                fallback_params = dict(query_params)
+                fallback_params["search_query"] = f"all:{relaxed_query}"
+                try:
+                    async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                        fb_response = await client.get(self.ARXIV_API_URL, params=fallback_params)
+                        if fb_response.status_code == 200:
+                            fb_result = self._parse_arxiv_feed(fb_response.text, params.query)
+                            if fb_result.total_found > 0:
+                                return fb_result
+                except Exception:
+                    pass
+
+        return result
 
     def _parse_arxiv_feed(self, xml_text: str, query: str) -> ArxivSearchResult:
         """Parses Atom XML returned by arXiv."""

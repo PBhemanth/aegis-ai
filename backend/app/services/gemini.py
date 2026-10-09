@@ -147,7 +147,14 @@ class GeminiService:
             query = "GNN cryptocurrency fraud detection"
             match = re.search(r'\b(?:about|on)\s+([^.\n]+?)(?:\s+and\s+|\.|\,|$)', goal, re.IGNORECASE)
             if match:
-                query = match.group(1).strip()
+                raw_topic = match.group(1).strip()
+                topic_clean = re.sub(
+                    r'\b(?:with|including|having)\s+(?:source\s+links?|citations?|references?|sources?|links?|pdfs?|code)\b.*$',
+                    '',
+                    raw_topic,
+                    flags=re.IGNORECASE
+                ).strip()
+                query = topic_clean or raw_topic
             elif any(k in goal_lower for k in ["graph", "gnn", "fraud"]):
                 query = "graph neural networks fraud detection"
 

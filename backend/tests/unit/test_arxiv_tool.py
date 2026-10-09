@@ -51,3 +51,27 @@ def test_arxiv_feed_xml_parser():
     assert paper.authors == ["Alice Johnson", "Bob Smith"]
     assert paper.primary_category == "cs.CR"
     assert paper.pdf_url == "http://arxiv.org/pdf/2301.00001v1.pdf"
+
+
+def test_arxiv_query_cleaning_strips_meta_directives():
+    tool = ArxivResearchTool()
+    assert tool._clean_search_query("GNN fraud detection with source links") == "GNN fraud detection"
+    assert tool._clean_search_query("3 papers on GNN fraud detection with citations") == "GNN fraud detection"
+    assert tool._clean_search_query("Research 3 papers on GNN fraud detection with source links") == "GNN fraud detection"
+
+
+@pytest.mark.asyncio
+async def test_arxiv_tool_executes_query_with_meta_instructions():
+    tool = ArxivResearchTool()
+    # Exact production failure query
+    params = ArxivSearchInput(query="GNN fraud detection with source links", max_results=3)
+    context = ExecutionContext()
+
+    result = await tool.execute(params, context)
+
+    assert result.total_found >= 1
+    assert len(result.papers) >= 1
+    first_paper = result.papers[0]
+    assert first_paper.arxiv_id is not None
+    assert len(first_paper.summary) > 20
+
